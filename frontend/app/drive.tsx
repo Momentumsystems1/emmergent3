@@ -16,13 +16,13 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api, unavailableOf } from "@/src/api";
 import { useAuth } from "@/src/auth";
-import { LatLng, MapCanvas, MapPerson } from "@/src/components/MapCanvas";
+import { Incident, INCIDENT_TYPE, incidentIcon, LatLng, MapCanvas, MapPerson } from "@/src/components/MapCanvas";
 import { SharingFab, SharingPanel } from "@/src/components/SharingFab";
 import { Button, showUnavailable, T, toast } from "@/src/components/ui";
 import { fonts, makeStyles, radius, spacing, useTheme } from "@/src/theme";
 
 type Place = { name: string; lat: number; lng: number };
-type Overlay = null | "stop" | "group" | "poi" | "sharing";
+type Overlay = null | "stop" | "group" | "poi" | "sharing" | "traffic";
 const POIS = [["cafe", "Cafeterías", "cafe"], ["fuel", "Gasolineras", "water"], ["ev", "Carga EV", "flash"], ["rest", "Descanso", "bed"], ["parking", "Parkings", "car"]] as const;
 const MODE_LABEL: Record<string, string> = { car: "Coche", motorcycle: "Moto", bicycle: "Bici", pedestrian: "A pie" };
 const fmtT = (s: number) => (s < 60 ? "<1 min" : s < 3600 ? `${Math.round(s / 60)} min` : `${Math.floor(s / 3600)} h ${Math.round((s % 3600) / 60)} min`);
@@ -110,6 +110,13 @@ export default function Drive() {
   const addStop = (st: Place) => { setStops((x) => [...x, { name: st.name, lat: st.lat, lng: st.lng }]); setOverlay(null); setQ(""); setTyped(""); toast(`Parada añadida: ${st.name.split(",")[0]}`, "success"); };
   const longPress = async (c: LatLng) => { try { const r = await api<Place>(`/mobility/reverse?lat=${c.lat}&lng=${c.lng}`); addStop(r); } catch { addStop({ name: `${c.lat.toFixed(4)}, ${c.lng.toFixed(4)}`, ...c }); } };
 
+  // ---- traffic incidents along the route + weather at destination (Azure) ----
+  const bbox = useMemo(() => { if (geom.length < 2) return null; let a = 90, b = 180, c2 = -90, d = -180; for (const [la, ln] of geom) { if (la < a) a = la; if (la > c2) c2 = la; if (ln < b) b = ln; if (ln > d) d = ln; } return { a: a - 0.01, b: b - 0.01, c: c2 + 0.01, d: d + 0.01 }; }, [geom]);
+  const incidentsQ = useQuery({ queryKey: ["incidents-route", bbox], enabled: !!bbox, refetchInterval: 120000, retry: false, queryFn: () => api<Incident[]>(`/mobility/incidents?min_lat=${bbox!.a}&min_lng=${bbox!.b}&max_lat=${bbox!.c}&max_lng=${bbox!.d}`) });
+  const onRoute = useMemo(() => { const step = Math.max(1, Math.floor(geom.length / 250)); return (incidentsQ.data ?? []).filter((i) => { for (let k = 0; k < geom.length; k += step) if (dist(i, { lat: geom[k][0], lng: geom[k][1] }) < 600) return true; return false; }); }, [incidentsQ.data, geom]);
+  const weather = useQuery({ queryKey: ["weather", dest.lat.toFixed(3), dest.lng.toFixed(3)], retry: false, staleTime: 600000, queryFn: () => api<any>(`/mobility/weather?lat=${dest.lat}&lng=${dest.lng}`) });
+  const [incSel, setIncSel] = useState<Incident | null>(null);
+
   const people: MapPerson[] = [
     ...(pos ? [{ member_id: "me-local", user_id: user?.id ?? "me", name: user?.profile?.name || "Tú", color: colors.brandPrimary, state: "shared", lat: pos.lat, lng: pos.lng, is_me: true }] : []),
     ...(positions.data ?? []).filter((x) => !x.is_me && onTrip.has(x.user_id)),
@@ -128,7 +135,8 @@ export default function Drive() {
 
   return (
     <View style={s.root} testID="drive-screen">
-      <MapCanvas people={people} pins={pins} polyline={geom as any} center={center} zoomDelta={0.006} onMapPress={() => { if (overlay) setOverlay(null); }} onMapLongPress={longPress} onUserPan={() => setFollow(false)} />
+      <MapCanvas people={people} pins={pins} polyline={geom as any} center={center} zoomDelta={0.006} onMapPress={() => { if (overlay || incSel) { setOverlay(null); setIncSel(null); } }} onMapLongPress={longPress} onUserPan={() => setFollow(false)}
+        traffic incidents={onRoute} onIncidentPress={(i) => { setOverlay(null); setIncSel(i); }} />
 
       {/* Top: next instruction + ETA */}
       <View style={[s.top, { paddingTop: insets.top + spacing.sm }]} pointerEvents="box-none">
@@ -160,6 +168,32 @@ export default function Drive() {
 
       {/* Panels */}
       {overlay === "sharing" ? <SharingPanel onClose={() => setOverlay(null)} bottom={panelBottom} /> : null}
+      {overlay === "traffic" ? (
+        <Animated.View entering={FadeInDown.duration(160)} exiting={FadeOut.duration(120)} style={[s.panel, { bottom: panelBottom }]} testID="panel-traffic">
+          <T weight="bold" style={{ fontSize: 14 }}>{incidentsQ.isLoading ? "Buscando incidencias…" : `${onRoute.length} ${onRoute.length === 1 ? "incidencia" : "incidencias"} en tu ruta`}</T>
+          {weather.data ? <T style={{ fontSize: 12, color: colors.muted, marginTop: 2 }} testID="drive-weather">Destino: {weather.data.temp_c != null ? `${Math.round(weather.data.temp_c)}°C · ` : ""}{weather.data.phrase}{weather.data.wind_kmh ? ` · viento ${Math.round(weather.data.wind_kmh)} km/h` : ""}</T> : null}
+          {(weather.data?.alerts ?? []).slice(0, 1).map((a: any, i: number) => <T key={i} style={{ fontSize: 12, color: colors.warning }} numberOfLines={2}>⚠ {a.title}{a.source ? ` (${a.source})` : ""}</T>)}
+          <ScrollView style={{ maxHeight: 190, marginTop: 4 }} showsVerticalScrollIndicator={false}>
+            {onRoute.slice(0, 10).map((i) => (
+              <Pressable key={i.id} testID={`route-incident-${i.id}`} onPress={() => { setFollow(false); setIncSel(i); setOverlay(null); }} style={s.row}>
+                <Ionicons name={incidentIcon(i) as any} size={16} color={i.road_closed ? colors.error : colors.warning} />
+                <View style={{ flex: 1 }}><T weight="semibold" style={{ fontSize: 13 }} numberOfLines={1}>{i.title || i.type}</T><T style={{ fontSize: 11, color: colors.muted }} numberOfLines={1}>{INCIDENT_TYPE[i.type ?? ""] ?? i.type}{i.road_closed ? " · vía cortada" : ""}{i.delay_s ? ` · +${Math.round(i.delay_s / 60)} min` : ""}</T></View>
+              </Pressable>
+            ))}
+            {incidentsQ.isSuccess && onRoute.length === 0 ? <T style={{ fontSize: 12, color: colors.muted }}>Ruta despejada: sin incidencias notificadas (Azure Maps).</T> : null}
+            {incidentsQ.isError ? <T style={{ fontSize: 12, color: colors.error }}>Incidencias no disponibles ahora.</T> : null}
+          </ScrollView>
+        </Animated.View>
+      ) : null}
+      {incSel ? (
+        <Animated.View entering={FadeInDown.duration(160)} exiting={FadeOut.duration(120)} style={[s.panel, { bottom: panelBottom }]} testID="drive-incident-card">
+          <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
+            <Ionicons name={incidentIcon(incSel) as any} size={20} color={incSel.road_closed ? colors.error : colors.warning} />
+            <View style={{ flex: 1 }}><T weight="semibold" style={{ fontSize: 13 }} numberOfLines={2}>{incSel.description || incSel.title}</T><T style={{ fontSize: 11, color: colors.muted }}>{INCIDENT_TYPE[incSel.type ?? ""] ?? incSel.type}{incSel.road_closed ? " · vía cortada" : ""}{incSel.delay_s ? ` · retraso ${Math.round(incSel.delay_s / 60)} min` : ""}{pos ? ` · a ${fmtD(dist(pos, incSel))}` : ""}</T></View>
+            <Pressable testID="drive-incident-close" onPress={() => setIncSel(null)} hitSlop={8} style={s.closeBtn}><Ionicons name="close" size={16} color={colors.onSurface} /></Pressable>
+          </View>
+        </Animated.View>
+      ) : null}
       {overlay === "stop" ? (
         <Animated.View entering={FadeInDown.duration(160)} exiting={FadeOut.duration(120)} style={[s.panel, { bottom: panelBottom }]} testID="panel-stop">
           <View style={s.search}><Ionicons name="search" size={16} color={colors.muted} /><TextInput testID="stop-search-input" style={s.searchInput} placeholder="Añadir parada: calle, lugar…" placeholderTextColor={colors.muted} value={q} onChangeText={setQ} autoFocus /></View>
@@ -206,6 +240,7 @@ export default function Drive() {
         <Tool testID="tool-stop" icon="add" label="Parada" on={overlay === "stop"} onPress={() => setOverlay(overlay === "stop" ? null : "stop")} />
         <Tool testID="tool-group" icon="people" label={onTrip.size > 1 ? `Grupo ${onTrip.size}` : "Grupo"} on={overlay === "group"} onPress={() => setOverlay(overlay === "group" ? null : "group")} />
         <Tool testID="tool-poi" icon="cafe" label="En ruta" on={overlay === "poi"} onPress={() => setOverlay(overlay === "poi" ? null : "poi")} />
+        <Tool testID="tool-traffic" icon="warning" label={onRoute.length ? `${onRoute.length}` : "Tráfico"} on={overlay === "traffic"} warn={onRoute.some((i) => i.road_closed)} onPress={() => setOverlay(overlay === "traffic" ? null : "traffic")} />
       </View>
       <View style={[s.fabs, { bottom: toolsBottom }]} pointerEvents="box-none">
         <SharingFab open={overlay === "sharing"} onPress={() => setOverlay(overlay === "sharing" ? null : "sharing")} />
@@ -215,9 +250,9 @@ export default function Drive() {
   );
 }
 
-function Tool({ icon, label, onPress, testID, on }: { icon: string; label: string; onPress: () => void; testID: string; on?: boolean }) {
+function Tool({ icon, label, onPress, testID, on, warn }: { icon: string; label: string; onPress: () => void; testID: string; on?: boolean; warn?: boolean }) {
   const s = useStyles(); const { colors } = useTheme();
-  const fg = on ? colors.onBrandPrimary : colors.onSurface;
+  const fg = on ? colors.onBrandPrimary : warn ? colors.error : colors.onSurface;
   return <Pressable testID={testID} onPress={onPress} style={[s.tool, on && s.fabOn]}><Ionicons name={icon as any} size={16} color={fg} /><T weight="semibold" style={{ fontSize: 12, color: fg }}>{label}</T></Pressable>;
 }
 

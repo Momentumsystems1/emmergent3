@@ -1,0 +1,43 @@
+{
+  "summary": "Iteration 4 review PASSED end-to-end. Backend: 12/12 new pytest cases in test_iteration4_azure.py pass (tiles road/traffic/incidents, bogus 404, static.png with pins+path, incidents 401 without auth + 200 with Ana in Madrid returning 80 features with all required fields, weather with phrase/temp_c/alerts/provider=azure_maps, providers.weather.configured=true & traffic.incidents=true, regression on reverse/nav-route/autocomplete). Frontend (web preview, 390x844): (a) Login → map-home renders a REAL Azure Maps static image (map-static-image inside map-canvas) with 'Azure Maps · vista estática (web)' notice; NO 'Something went wrong' red screen; zoom-in/zoom-out visibly change the map. (b) fab-traffic opens traffic-panel showing '80 incidencias en la zona' with 12 incident-row-* rows and 54 map-incident-* markers rendered on the map; tapping incident-row-0 opens incident-card, incident-close dismisses it; map click closes the traffic-panel. (c) Second map click → selected-point-card with real reverse-geocoded name 'Autovía M-40, 28054 Madrid' AND weather fragment '35°C Soleado' + heat alert '⚠ Aviso amarillo por temperatura extremadamente elevada'. (d) /drive?lat=40.4168&lng=-3.7038&place=Puerta%20del%20Sol&fromLat=40.45&fromLng=-3.69: map image with blue route path renders, drive-instruction 'Gire a la derecha en Calle de Santiago Bernabéu', drive-eta 'en 110 m · 23 min · 7.5 km · llegada 18:58'; tool-traffic → panel-traffic '9 incidencias en tu ruta' + drive-weather 'Destino: 36°C · Soleado · viento 16 km/h' + heat alert; tapping route-incident-0 opens drive-incident-card, drive-incident-close closes it, map-click closes panel-traffic; tool-stop/tool-group/tool-poi all open their panels; fab-sharing opens sharing-panel. (e) Regression: /privacy, /profile render without red screen; /navigate 'Gran Via' → nav-result-0 → route-summary → nav-go navigates to /drive successfully. The previously reported red-screen '(0, _srcComponentsMapCanvas.incidentIcon) is not a function' is FIXED — no red screens observed on any tested route. Console still shows the known-ignorable 'shadow*' + 'pointerEvents' React Native Web deprecation warnings.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "GET /api/mobility/tiles/incidents/{z}/{x}/{y}.png",
+        "issue": "URL suffix is '.png' but Azure's microsoft.traffic.incident tileset returns 'application/vnd.mapbox-vector-tile' — proxied as-is (200, ~200 bytes). Not a functional bug (the native map SDK consumes it correctly and web only shows Azure-rendered incident markers via /incidents), but the extension is misleading. Consider either renaming the route or serializing vector tiles behind a distinct path."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration4_azure.py",
+    "/app/test_reports/pytest/it4_results.xml"
+  ],
+  "action_items": [
+    "Optional: rename /mobility/tiles/incidents/{z}/{x}/{y}.png (or return a differently-named endpoint) to reflect that the incident tileset from Azure is a Mapbox vector tile, not a raster PNG. The current behaviour is correct; only the naming is inconsistent.",
+    "Optional (carried from it3): swallow the shadow*/pointerEvents deprecation console noise — non-blocking."
+  ],
+  "critical_code_review_comments": [
+    "providers.py:271-282 (map_tile) — good validation of tileset+key+zoom range, correct passthrough of upstream status and content-type; cache TTL differentiated (300s for live layers, 86400s for base). Solid.",
+    "providers.py:285-309 (static_map) — pins grouped by color and paths sampled to ~60 points; sensible clamping of width/height/zoom. Verified with pins+path in test.",
+    "providers.py:312-333 (traffic_incidents) — 'features' iteration is defensive with .get, sorts by (road_closed, severity, delay) desc, caps at 80. Field names in payload match frontend consumers on /map and /drive.",
+    "providers.py:336-354 (weather) — parallel-ish current + severe calls, defaults alerts=[] when severe call fails, returns provider='azure_maps'. Weather rendered on both selected-point-card (map-home) and drive panel — confirmed live.",
+    "MapCanvas.web.tsx:38-43 — static.png URL is memoized on size/lat/lng/zoom/pins/selected/polyline/scheme so zoom+/– produce a different image URL (confirmed visually). React-native-web Image does not expose the raw <img>@src via getAttribute on the container which is why the automated src-comparison returned None; not a bug.",
+    "mapTypes.ts — extracting incidentIcon + INCIDENT_TYPE here (imported by both MapCanvas.tsx, MapCanvas.web.tsx, drive.tsx, map.tsx) fixed the earlier web crash '_srcComponentsMapCanvas.incidentIcon is not a function'. Retest confirms no red screen on any tested route."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration4_azure.py (new)"
+  ],
+  "success_rate": {"backend": "100% (12/12 iteration-4 tests)", "frontend": "100% of the review-spec scenarios"},
+  "seed_data_creation": "None. No new users or groups were created; only Ana was used for the authenticated calls.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Azure Maps tiles/static/incidents/weather are fully wired and confirmed live on Madrid. The web preview (react-native-web) renders the Azure static map correctly on both /map and /drive; the previous crash caused by a missing helper export is fixed via mapTypes.ts. If new iterations need to trigger different weather/incident scenarios, /api/mobility/incidents accepts any bbox and /api/mobility/weather any lat/lng. Ana's Grupo 1 is still near/at the 5-fixed-member free-plan cap (see it3 report) — avoid inviting more members via that group during automated tests. The 'shadow*' and 'pointerEvents' console warnings on the web preview are known-ignorable RN Web deprecations, not errors.",
+  "rca_of_issue": "N/A — no bugs found in this iteration. The single naming inconsistency in /mobility/tiles/incidents/{z}/{x}/{y}.png (vector body under .png suffix) is documented as a minor issue and not a functional defect."
+}

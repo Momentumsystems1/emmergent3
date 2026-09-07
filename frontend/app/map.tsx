@@ -10,13 +10,13 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Location from "expo-location";
 import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
-import { Pressable, View } from "react-native";
+import { Pressable, ScrollView, View } from "react-native";
 import Animated, { FadeIn, FadeInDown, FadeInUp, FadeOut } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api } from "@/src/api";
 import { useAuth } from "@/src/auth";
-import { LatLng, MapCanvas, MapPerson } from "@/src/components/MapCanvas";
+import { Incident, INCIDENT_TYPE, incidentIcon, LatLng, MapCanvas, MapPerson } from "@/src/components/MapCanvas";
 import { MembersRail } from "@/src/components/MembersRail";
 import { SharingFab, SharingPanel } from "@/src/components/SharingFab";
 import { Button, Glass, T, toast } from "@/src/components/ui";
@@ -50,6 +50,13 @@ export default function MapHome() {
   const sharesLocation = !!perms.data && Object.values(perms.data).some((v: any) => v.effective && (v.key === "exact_location" || v.key === "approx_location"));
   const loc = useLocationSharing(sharesLocation);
   const reverse = useQuery({ queryKey: ["reverse", sel?.lat, sel?.lng], enabled: !!sel, retry: false, queryFn: () => api<{ name: string }>(`/mobility/reverse?lat=${sel!.lat}&lng=${sel!.lng}`) });
+  const weather = useQuery({ queryKey: ["weather", sel?.lat?.toFixed(3), sel?.lng?.toFixed(3)], enabled: !!sel, retry: false, staleTime: 600000, queryFn: () => api<any>(`/mobility/weather?lat=${sel!.lat}&lng=${sel!.lng}`) });
+  const [traffic, setTraffic] = useState(false);
+  const [trafficPanel, setTrafficPanel] = useState(false);
+  const incCenter = focus ?? { lat: 40.4168, lng: -3.7038 };
+  const incidents = useQuery({ queryKey: ["incidents", incCenter.lat.toFixed(2), incCenter.lng.toFixed(2)], enabled: traffic, refetchInterval: 120000, retry: false,
+    queryFn: () => api<Incident[]>(`/mobility/incidents?min_lat=${incCenter.lat - 0.12}&min_lng=${incCenter.lng - 0.16}&max_lat=${incCenter.lat + 0.12}&max_lng=${incCenter.lng + 0.16}`) });
+  const [incSel, setIncSel] = useState<Incident | null>(null);
   const pendingTrips = useQuery({ queryKey: ["trips-pending"], refetchInterval: 15000, queryFn: () => api<any[]>("/trips/pending") });
   const [dismissedTrip, setDismissedTrip] = useState<string | null>(null);
   const tripInvite = (pendingTrips.data ?? []).find((t) => t.id !== dismissedTrip);
@@ -81,8 +88,8 @@ export default function MapHome() {
   // eslint-disable-next-line react-hooks/set-state-in-effect, react-hooks/exhaustive-deps -- one-shot centering on the first GPS fix
   useEffect(() => { if (mePos && !focus) setFocus({ lat: mePos.lat, lng: mePos.lng, key: 1 }); }, [mePos?.lat, mePos?.lng, focus]);
 
-  const closeAll = () => { setMenu(false); setSel(null); setSharing(false); };
-  const anyOpen = menu || !!sel || sharing || (locBanner && loc.perm !== "granted");
+  const closeAll = () => { setMenu(false); setSel(null); setSharing(false); setTrafficPanel(false); setIncSel(null); };
+  const anyOpen = menu || !!sel || sharing || trafficPanel || !!incSel || (locBanner && loc.perm !== "granted");
   const onMapPress = (c?: LatLng) => { if (anyOpen) { closeAll(); setLocBanner(false); return; } if (c) setSel(c); };
   const recenter = () => { closeAll(); if (!mePos) { toast(loc.perm === "granted" ? "Obteniendo tu ubicación…" : "Permite la ubicación para centrarte"); if (loc.perm !== "granted") setLocBanner(true); return; } setFocus({ ...mePos, key: (focus?.key ?? 0) + 1 }); };
   const checkIn = async () => {
@@ -95,7 +102,8 @@ export default function MapHome() {
 
   return (
     <View style={s.root} testID="map-home">
-      <MapCanvas people={people} center={focus} selected={sel} onMapPress={onMapPress} onMapLongPress={(c) => { setMenu(false); setSel(c); }}
+      <MapCanvas people={people} center={focus} selected={sel} onMapPress={onMapPress} onMapLongPress={(c) => { closeAll(); setSel(c); }}
+        traffic={traffic} incidents={traffic ? incidents.data ?? [] : []} onIncidentPress={(i) => { closeAll(); setIncSel(i); }}
         onPersonPress={(p) => { closeAll(); if (p.member_id === "me-local") router.push("/profile"); else router.push(`/person/${p.member_id}?group=${group?.id}`); }} />
 
       {/* Compact navigator pill */}
@@ -161,11 +169,48 @@ export default function MapHome() {
           </Animated.View>
         ) : null}
         <SharingFab open={sharing} onPress={() => { const next = !sharing; closeAll(); setSharing(next); }} />
+        <Pressable testID="fab-traffic" onPress={() => { const on = !traffic; closeAll(); setTraffic(on); setTrafficPanel(on); }} style={[s.fab, traffic && s.fabOn]} accessibilityLabel="Tráfico e incidencias">
+          <Ionicons name="car" size={20} color={traffic ? colors.onBrandPrimary : colors.onSurface} />
+          {traffic && incidents.data?.length ? <View style={s.fabBadge}><T weight="bold" style={{ fontSize: 9, color: colors.onWarning }}>{Math.min(99, incidents.data.length)}</T></View> : null}
+        </Pressable>
         <Pressable testID="fab-recenter" onPress={recenter} style={s.fab} accessibilityLabel="Centrar en mi ubicación"><Ionicons name="locate" size={20} color={mePos ? colors.brandPrimary : colors.muted} /></Pressable>
         <Pressable testID="fab-tools" onPress={() => { const next = !menu; closeAll(); setMenu(next); }} style={[s.fab, menu && s.fabOn]} accessibilityLabel="Herramientas"><Ionicons name={menu ? "close" : "grid"} size={20} color={menu ? colors.onBrandPrimary : colors.onSurface} /></Pressable>
       </View>
 
       {sharing ? <SharingPanel onClose={() => setSharing(false)} bottom={insets.bottom + spacing.lg} /> : null}
+
+      {/* Traffic incidents (Azure) */}
+      {trafficPanel && !incSel ? (
+        <Animated.View entering={FadeInDown.duration(180)} exiting={FadeOut.duration(120)} style={[s.selCard, { bottom: insets.bottom + spacing.lg, maxHeight: 300 }]} testID="traffic-panel">
+          <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
+            <Ionicons name="car" size={18} color={colors.brandPrimary} />
+            <T weight="bold" style={{ fontSize: 14, flex: 1 }}>{incidents.isLoading ? "Buscando incidencias…" : incidents.isError ? "Incidencias no disponibles" : `${incidents.data?.length ?? 0} incidencias en la zona`}</T>
+            <Pressable testID="traffic-close" onPress={() => setTrafficPanel(false)} hitSlop={8} style={s.closeBtn}><Ionicons name="close" size={16} color={colors.onSurface} /></Pressable>
+          </View>
+          <T style={{ fontSize: 11, color: colors.muted, marginTop: 2 }}>Capa de tráfico en tiempo real activa (Azure Maps). Toca una incidencia para verla.</T>
+          <ScrollView style={{ maxHeight: 200, marginTop: spacing.sm }} showsVerticalScrollIndicator={false}>
+            {(incidents.data ?? []).slice(0, 12).map((i) => (
+              <Pressable key={i.id} testID={`incident-row-${i.id}`} onPress={() => { setFocus({ lat: i.lat, lng: i.lng, key: (focus?.key ?? 0) + 1 }); setIncSel(i); setTrafficPanel(false); }} style={s.incRow}>
+                <Ionicons name={incidentIcon(i) as any} size={16} color={i.road_closed ? colors.error : colors.warning} />
+                <View style={{ flex: 1 }}><T weight="semibold" style={{ fontSize: 13 }} numberOfLines={1}>{i.title || i.type}</T><T style={{ fontSize: 11, color: colors.muted }} numberOfLines={1}>{INCIDENT_TYPE[i.type ?? ""] ?? i.type}{i.road_closed ? " · vía cortada" : ""}{i.delay_s ? ` · +${Math.round(i.delay_s / 60)} min` : ""}</T></View>
+              </Pressable>
+            ))}
+            {incidents.isSuccess && incidents.data.length === 0 ? <T style={{ fontSize: 12, color: colors.muted }}>Sin incidencias notificadas en esta zona.</T> : null}
+          </ScrollView>
+        </Animated.View>
+      ) : null}
+      {incSel ? (
+        <Animated.View entering={FadeInDown.duration(180)} exiting={FadeOut.duration(120)} style={[s.selCard, { bottom: insets.bottom + spacing.lg }]} testID="incident-card">
+          <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
+            <Ionicons name={incidentIcon(incSel) as any} size={20} color={incSel.road_closed ? colors.error : colors.warning} />
+            <View style={{ flex: 1 }}>
+              <T weight="semibold" style={{ fontSize: 14 }} numberOfLines={2}>{incSel.description || incSel.title}</T>
+              <T style={{ fontSize: 11, color: colors.muted }}>{INCIDENT_TYPE[incSel.type ?? ""] ?? incSel.type}{incSel.road_closed ? " · vía cortada" : ""}{incSel.delay_s ? ` · retraso ${Math.round(incSel.delay_s / 60)} min` : ""}{mePos ? ` · ${fmtDist(distM(mePos, incSel))} de ti` : ""}</T>
+            </View>
+            <Pressable testID="incident-close" onPress={() => setIncSel(null)} hitSlop={8} style={s.closeBtn}><Ionicons name="close" size={16} color={colors.onSurface} /></Pressable>
+          </View>
+        </Animated.View>
+      ) : null}
 
       {/* Selected point (compact, never covers the map) */}
       {sel ? (
@@ -174,7 +219,8 @@ export default function MapHome() {
             <Ionicons name="location" size={18} color={colors.brandPrimary} />
             <View style={{ flex: 1 }}>
               <T weight="semibold" style={{ fontSize: 14 }} numberOfLines={2} testID="selected-point-name">{reverse.isLoading ? "Buscando dirección…" : selName}</T>
-              <T style={{ fontSize: 11, color: colors.muted }}>{mePos ? `${fmtDist(distM(mePos, sel))} de ti` : "Toca “Ir” para calcular la ruta"}</T>
+              <T style={{ fontSize: 11, color: colors.muted }}>{mePos ? `${fmtDist(distM(mePos, sel))} de ti` : "Toca “Ir” para calcular la ruta"}{weather.data?.temp_c != null ? ` · ${Math.round(weather.data.temp_c)}°C ${weather.data.phrase ?? ""}` : ""}</T>
+              {weather.data?.alerts?.length ? <T style={{ fontSize: 11, color: colors.warning }} numberOfLines={1} testID="selected-weather-alert">⚠ {weather.data.alerts[0].title}</T> : null}
             </View>
             <Pressable testID="selected-point-close" onPress={() => setSel(null)} hitSlop={8} style={s.closeBtn}><Ionicons name="close" size={16} color={colors.onSurface} /></Pressable>
           </View>
@@ -217,6 +263,8 @@ const useStyles = makeStyles((c) => ({
   fabs: { position: "absolute", right: spacing.md, alignItems: "flex-end", gap: spacing.sm },
   fab: { width: 48, height: 48, borderRadius: 24, backgroundColor: c.glassStrong, borderWidth: 1, borderColor: c.border, alignItems: "center", justifyContent: "center", shadowColor: c.surfaceInverse, shadowOpacity: 0.15, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 4 },
   fabOn: { backgroundColor: c.brandPrimary, borderColor: c.brandPrimary },
+  fabBadge: { position: "absolute", top: -2, right: -2, minWidth: 16, height: 16, borderRadius: 8, backgroundColor: c.warning, alignItems: "center", justifyContent: "center", paddingHorizontal: 3 },
+  incRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingVertical: 6, borderBottomWidth: 1, borderColor: c.divider },
   menu: { gap: 6, alignItems: "flex-end", marginBottom: 2 },
   menuItem: { flexDirection: "row", alignItems: "center", gap: spacing.sm, height: 40, paddingLeft: 14, paddingRight: 4, borderRadius: radius.pill, backgroundColor: c.glassStrong, borderWidth: 1, borderColor: c.border, shadowColor: c.surfaceInverse, shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 },
   menuIcon: { width: 32, height: 32, borderRadius: 16, backgroundColor: c.surfaceTertiary, alignItems: "center", justifyContent: "center" },

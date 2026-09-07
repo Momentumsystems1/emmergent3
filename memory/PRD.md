@@ -36,6 +36,7 @@ Ver /app/memory/test_credentials.md.
   Sin barra de estado "Compartiendo", sin hoja inferior "Grupo". Usuario centrado con zoom navegador (delta 0.01), FAB recentrar,
   FAB herramientas (Quedar/Convoy/¿Todo bien?/Anti-congestión/Actividad/Privacidad) que se cierra al tocar el mapa.
   Toque/long-press en el mapa → `GET /mobility/reverse` (Azure) → tarjeta compacta con Ir / Quedar aquí / Convoy.
+- Sesión 4c: Azure Maps visible en todo (tiles raster proxied `/mobility/tiles`, tráfico en tiempo real nativo; web = mapa estático Azure real con proyección Mercator, tap→coordenada, zoom). Incidencias (`/mobility/incidents`, Azure Traffic Incident 2025-01-01) en mapa y en ruta; meteorología + avisos oficiales (`/mobility/weather`). Tileset de incidencias es MVT → solo marcadores.
 - Sesión 4b: carril izquierdo de avatares (centra el mapa), FAB permanente "Qué comparto y con quién" (SharingFab/Panel → /privacy),
   pantalla `/drive` (navegación activa: ruta, siguiente maniobra, ETA, paradas por búsqueda/POI/long-press, viaje compartido con ETAs reales,
   recálculo al salirse >120 m), botón "Ir" en navigate. Backend `routers/trips.py` (trips, invite, join, pending, close).

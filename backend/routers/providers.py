@@ -21,12 +21,12 @@ def provider_status() -> dict:
                       "production_ready": azure, "note": None if azure else "Nominatim: uso limitado (1 req/s), no apto para producción"},
         "routing": {"provider": "azure_maps" if azure else "osrm_demo", "configured": True,
                     "production_ready": azure, "note": None if azure else "OSRM demo público: sin garantía de servicio"},
-        "traffic": {"provider": "azure_maps" if azure else None, "configured": azure, "production_ready": azure,
+        "traffic": {"provider": "azure_maps" if azure else None, "configured": azure, "production_ready": azure, "incidents": azure,
                     "note": None if azure else "Sin datos de tráfico: requiere clave Azure Maps"},
         "transit": {"provider": None, "configured": False, "production_ready": False,
                     "note": "Sin proveedor de transporte público configurado"},
         "parking": {"provider": None, "configured": False, "production_ready": False, "note": "Sin proveedor de parkings"},
-        "weather": {"provider": None, "configured": False, "production_ready": False, "note": "Sin proveedor meteorológico"},
+        "weather": {"provider": "azure_maps" if azure else None, "configured": azure, "production_ready": azure, "note": None if azure else "Sin proveedor meteorológico"},
         "messaging": {"provider": "os_share_intent", "configured": True, "production_ready": True,
                       "note": "WhatsApp/SMS mediante enlaces del sistema; sin confirmación de entrega"},
         "camera_streaming": {"provider": None, "configured": False, "production_ready": False,
@@ -258,6 +258,100 @@ async def reverse_geocode(lat: float, lng: float, user=Depends(current_user)):
 @router.get("/providers")
 async def providers():
     return provider_status()
+
+
+# ---------------- Azure Maps visual + situational services (tiles, static map, incidents, weather) ----------------
+from fastapi import Response as _Response
+
+TILESETS = {"road": "microsoft.base.road", "dark": "microsoft.base.darkgrey", "traffic": "microsoft.traffic.relative.main"}
+# NOTE: microsoft.traffic.incident is a vector tileset (MVT) → not usable as a raster layer; incidents are drawn as markers from /incidents.
+_AZ = "https://atlas.microsoft.com"
+
+
+@router.get("/tiles/{tileset}/{z}/{x}/{y}.png")
+async def map_tile(tileset: str, z: int, x: int, y: int):
+    """Raster tile proxy (keeps the Azure key server-side; map SDKs cannot send auth headers for tiles)."""
+    if tileset not in TILESETS or not AZURE_MAPS_KEY or not (0 <= z <= 20):
+        return _Response(status_code=404)
+    async with httpx.AsyncClient(timeout=10) as c:
+        r = await c.get(f"{_AZ}/map/tile", params={"api-version": "2024-04-01", "tilesetId": TILESETS[tileset], "zoom": z, "x": x, "y": y,
+                                                 "tileSize": 256, "language": "es-ES", "subscription-key": AZURE_MAPS_KEY})
+    if r.status_code != 200:
+        return _Response(status_code=r.status_code)
+    ttl = 300 if tileset == "traffic" else 86400
+    return _Response(content=r.content, media_type=r.headers.get("content-type", "image/png"), headers={"Cache-Control": f"public, max-age={ttl}"})
+
+
+@router.get("/static.png")
+async def static_map(lat: float, lng: float, zoom: int = 14, w: int = 400, h: int = 600, dark: bool = False, pins: str = "", path: str = ""):
+    """Static Azure map for the web preview. pins: 'lat,lng,RRGGBB;…'  path: 'lat,lng;lat,lng;…' (sampled to 60 points)."""
+    if not AZURE_MAPS_KEY:
+        return _Response(status_code=404)
+    params = [("api-version", "2024-04-01"), ("tilesetId", "microsoft.base.darkgrey" if dark else "microsoft.base.road"), ("zoom", max(1, min(zoom, 20))),
+              ("center", f"{lng},{lat}"), ("width", max(80, min(w, 2000))), ("height", max(80, min(h, 1500))), ("language", "es-ES"), ("subscription-key", AZURE_MAPS_KEY)]
+    by_color: dict[str, list[str]] = {}
+    for p in [x for x in pins.split(";") if x]:
+        parts = p.split(",")
+        if len(parts) >= 2:
+            by_color.setdefault(parts[2] if len(parts) > 2 else "E11D48", []).append(f"{float(parts[1])} {float(parts[0])}")
+    for color, pts in by_color.items():
+        params.append(("pins", f"default|co{color}|sc0.9||" + "|".join(pts)))
+    pts = [x for x in path.split(";") if x]
+    if len(pts) >= 2:
+        step = max(1, len(pts) // 60)
+        sampled = pts[::step] + ([pts[-1]] if (len(pts) - 1) % step else [])
+        params.append(("path", "lc2563EB|lw4||" + "|".join(f"{float(p.split(',')[1])} {float(p.split(',')[0])}" for p in sampled)))
+    async with httpx.AsyncClient(timeout=15) as c:
+        r = await c.get(f"{_AZ}/map/static", params=params)
+    if r.status_code != 200:
+        log.warning("static map failed: %s %s", r.status_code, r.text[:200])
+        return _Response(status_code=r.status_code)
+    return _Response(content=r.content, media_type="image/png", headers={"Cache-Control": "public, max-age=60"})
+
+
+@router.get("/incidents")
+async def traffic_incidents(min_lat: float, min_lng: float, max_lat: float, max_lng: float, user=Depends(current_user)):
+    """Real traffic incidents (Azure Traffic Incident API) inside a bounding box; most severe first."""
+    if not AZURE_MAPS_KEY:
+        raise Unavailable("service", "Incidencias de tráfico requieren Azure Maps.", "traffic")
+    try:
+        async with httpx.AsyncClient(timeout=10) as c:
+            r = await c.get(f"{_AZ}/traffic/incident", params={"api-version": "2025-01-01", "bbox": f"{min_lng},{min_lat},{max_lng},{max_lat}",
+                                                            "subscription-key": AZURE_MAPS_KEY})
+            r.raise_for_status()
+    except httpx.HTTPError as e:
+        log.warning("incidents failed: %s", e)
+        raise Unavailable("service", "El servicio de incidencias no respondió.", "traffic")
+    out = []
+    for f in r.json().get("features", []):
+        p = f.get("properties", {})
+        lon, lat = f["geometry"]["coordinates"][:2]
+        out.append({"id": str(f.get("id")), "lat": lat, "lng": lon, "type": p.get("incidentType"), "title": p.get("title"), "description": p.get("description"),
+                    "severity": p.get("severity", 0), "delay_s": p.get("delay") or 0, "road_closed": bool(p.get("isRoadClosed")), "jam": bool(p.get("isTrafficJam")),
+                    "start": p.get("startTime"), "end": p.get("endTime")})
+    out.sort(key=lambda i: (-int(i["road_closed"]), -(i["severity"] or 0), -(i["delay_s"] or 0)))
+    return out[:80]
+
+
+@router.get("/weather")
+async def weather(lat: float, lng: float, user=Depends(current_user)):
+    """Current conditions + official severe alerts (Azure Maps Weather)."""
+    if not AZURE_MAPS_KEY:
+        raise Unavailable("service", "Meteorología requiere Azure Maps.", "weather")
+    try:
+        async with httpx.AsyncClient(timeout=10) as c:
+            cur, al = await c.get(f"{_AZ}/weather/currentConditions/json", params={"api-version": "1.1", "query": f"{lat},{lng}", "language": "es-ES", "subscription-key": AZURE_MAPS_KEY}), \
+                await c.get(f"{_AZ}/weather/severe/alerts/json", params={"api-version": "1.1", "query": f"{lat},{lng}", "language": "es-ES", "subscription-key": AZURE_MAPS_KEY})
+            cur.raise_for_status()
+    except httpx.HTTPError as e:
+        log.warning("weather failed: %s", e)
+        raise Unavailable("service", "El servicio meteorológico no respondió.", "weather")
+    res = (cur.json().get("results") or [{}])[0]
+    alerts = [{"title": (a.get("description") or {}).get("localized"), "level": a.get("level"), "class": a.get("class"), "source": a.get("source")}
+              for a in (al.json().get("results") or [])] if al.status_code == 200 else []
+    return {"phrase": res.get("phrase"), "temp_c": (res.get("temperature") or {}).get("value"), "icon": res.get("iconCode"),
+            "precipitation": res.get("hasPrecipitation"), "precipitation_type": res.get("precipitationType"),
+            "wind_kmh": ((res.get("wind") or {}).get("speed") or {}).get("value"), "alerts": alerts, "provider": "azure_maps"}
 
 
 @router.get("/geocode")

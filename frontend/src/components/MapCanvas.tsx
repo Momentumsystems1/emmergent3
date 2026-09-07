@@ -1,28 +1,16 @@
 // Native map canvas (react-native-maps). Web uses MapCanvas.web.tsx.
+import Ionicons from "@react-native-vector-icons/ionicons";
 import React, { useEffect, useRef } from "react";
 import { View } from "react-native";
-import MapView, { Marker, Polyline } from "react-native-maps";
+import MapView, { Marker, Polyline, UrlTile } from "react-native-maps";
 
+import { BASE } from "@/src/api";
 import { PersonAvatar } from "@/src/components/orbs";
 import { useTheme } from "@/src/theme";
 
-export type MapPerson = { member_id: string; user_id: string; name: string; color: string; state: string; lat?: number; lng?: number; is_me?: boolean; label?: string; precision?: string; at?: string; status?: string | null };
-export type MapPin = { id: string; lat: number; lng: number; title: string; color?: string };
-export type LatLng = { lat: number; lng: number };
+import { incidentIcon, MapCanvasProps } from "@/src/components/mapTypes";
 
-export type MapCanvasProps = {
-  people: MapPerson[]; pins?: MapPin[]; polyline?: [number, number][]; onPersonPress?: (p: MapPerson) => void;
-  /** Animates the camera whenever lat/lng/key change (key lets the caller re-center on the same coordinates). */
-  center?: LatLng & { key?: number };
-  /** Navigator-like zoom by default (~1 km). */
-  zoomDelta?: number;
-  /** Tap on the map (coordinate is undefined on web, where there is no real map). */
-  onMapPress?: (c?: LatLng) => void;
-  onMapLongPress?: (c: LatLng) => void;
-  /** User dragged the map (native only) → callers typically stop following. */
-  onUserPan?: () => void;
-  selected?: LatLng | null;
-};
+export * from "@/src/components/mapTypes";
 
 const DARK_STYLE = [
   { elementType: "geometry", stylers: [{ color: "#0b1526" }] },
@@ -40,9 +28,10 @@ const LIGHT_STYLE = [
   { featureType: "poi", stylers: [{ visibility: "off" }] },
 ];
 
-export function MapCanvas({ people, pins = [], polyline, onPersonPress, center, zoomDelta = 0.01, onMapPress, onMapLongPress, onUserPan, selected }: MapCanvasProps) {
+export function MapCanvas({ people, pins = [], polyline, onPersonPress, center, zoomDelta = 0.01, onMapPress, onMapLongPress, onUserPan, selected, traffic, incidents = [], onIncidentPress }: MapCanvasProps) {
   const { scheme, colors } = useTheme();
   const ref = useRef<MapView>(null);
+  const tiles = `${BASE}/mobility/tiles`;
   const located = people.filter((p) => p.state === "shared" && p.lat != null);
   const me = located.find((p) => p.is_me);
   const c = center ?? (me ? { lat: me.lat!, lng: me.lng! } : located[0] ? { lat: located[0].lat!, lng: located[0].lng! } : { lat: 40.4168, lng: -3.7038 });
@@ -58,6 +47,16 @@ export function MapCanvas({ people, pins = [], polyline, onPersonPress, center, 
         showsCompass={false} toolbarEnabled={false} showsMyLocationButton={false}
         onPress={(e) => { if ((e.nativeEvent as any).action === "marker-press") return; onMapPress?.(coord(e)); }}
         onLongPress={(e) => onMapLongPress?.(coord(e))} onPanDrag={onUserPan ? () => onUserPan() : undefined}>
+        {/* Azure Maps base (road / dark) + optional traffic-flow layer, proxied by the backend; incidents are markers */}
+        <UrlTile urlTemplate={`${tiles}/${scheme === "dark" ? "dark" : "road"}/{z}/{x}/{y}.png`} maximumZ={20} zIndex={-1} />
+        {traffic ? <UrlTile urlTemplate={`${tiles}/traffic/{z}/{x}/{y}.png`} maximumZ={20} zIndex={1} /> : null}
+        {incidents.map((i) => (
+          <Marker key={i.id} coordinate={{ latitude: i.lat, longitude: i.lng }} onPress={() => onIncidentPress?.(i)} anchor={{ x: 0.5, y: 0.5 }} testID={`map-incident-${i.id}`}>
+            <View style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: i.road_closed ? colors.error : colors.warning, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: colors.glassStrong }}>
+              <Ionicons name={incidentIcon(i) as any} size={14} color={i.road_closed ? colors.onError : colors.onWarning} />
+            </View>
+          </Marker>
+        ))}
         {located.map((p) => (
           <Marker key={p.member_id} coordinate={{ latitude: p.lat!, longitude: p.lng! }} onPress={() => onPersonPress?.(p)} anchor={{ x: 0.4, y: 0.6 }} testID={`map-person-${p.member_id}`}>
             <PersonAvatar name={p.name} color={p.color} state="shared" size={p.is_me ? 50 : 42} />

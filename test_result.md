@@ -114,3 +114,10 @@ frontend:
   - task: "InviteOptions (group link via WhatsApp / share sheet; contacts picker native-only) on onboarding/group and group/[id]"
   - task: "api.ts single-flight refresh (fixes logout race on reload)"
 credentials: see /app/memory/test_credentials.md (ana.demo@sentinelfamily.app / Sentinel2026!)
+
+## Iteration 4 — Azure Maps visible everywhere + traffic incidents + weather
+backend (providers.py): GET /api/mobility/tiles/{road|dark|traffic}/{z}/{x}/{y}.png (public proxy), GET /api/mobility/static.png (public, web static map with pins/path),
+  GET /api/mobility/incidents?min_lat&min_lng&max_lat&max_lng (auth; Azure Traffic Incident 2025-01-01), GET /api/mobility/weather?lat&lng (auth; current + severe alerts)
+frontend: MapCanvas native → Azure base UrlTile + traffic/incident tiles + incident markers; MapCanvas.web → real Azure static map with projection, tap→coordinate, zoom +/-;
+  shared types in src/components/mapTypes.ts; map.tsx fab-traffic → traffic-panel (incident list) / incident-card, weather line in selected-point-card;
+  drive.tsx tool-traffic → panel-traffic (incidents within 600 m of route + destination weather/alerts), incident markers on map

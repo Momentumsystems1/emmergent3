@@ -32,7 +32,7 @@ export default function Account() {
       }
       await setLocalOnboarding({ step: "consent" });
       if (u.onboarding?.completed) router.replace("/map");
-      else router.replace(u.onboarding?.step === "profile" ? "/onboarding/profile" : u.onboarding?.step === "group" ? "/onboarding/group" : "/onboarding/consent");
+      else router.replace(u.onboarding?.step === "profile" ? "/onboarding/profile" : u.onboarding?.step === "group" ? "/onboarding/group" : "/onboarding/profile");
     } catch (e: any) {
       toast(e?.message ?? "No se pudo continuar", "error");
     } finally { setLoading(false); }
@@ -44,7 +44,7 @@ export default function Account() {
       const u = await signInWithGoogle();
       if (!u) return; // web: full-page redirect in progress, or the user cancelled on mobile
       if (u.onboarding?.completed) router.replace("/map");
-      else router.replace(u.onboarding?.step === "profile" ? "/onboarding/profile" : u.onboarding?.step === "group" ? "/onboarding/group" : "/onboarding/consent");
+      else router.replace(u.onboarding?.step === "profile" ? "/onboarding/profile" : u.onboarding?.step === "group" ? "/onboarding/group" : "/onboarding/profile");
     } catch (e: any) {
       toast(e?.message ?? "No se pudo iniciar sesión con Google", "error");
     } finally { setGLoading(false); }

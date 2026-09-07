@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.cors import CORSMiddleware
 
 from core import Unavailable, client, current_user, db, now
-from routers import auth, consent, coordination, entitlements, groups, people, providers, trips
+from routers import auth, consent, coordination, entitlements, groups, people, providers, trips, media
 from routers.providers import provider_status
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -17,7 +17,7 @@ app = FastAPI(title="Sentinel Family API")
 api = APIRouter(prefix="/api")
 
 for r in (auth.router, consent.router, entitlements.router, groups.router, people.router, providers.router,
-          coordination.router, trips.router):
+          coordination.router, trips.router, media.router):
     api.include_router(r)
 
 
@@ -57,6 +57,11 @@ app.add_middleware(CORSMiddleware, allow_credentials=True, allow_origins=["*"], 
 
 @app.on_event("startup")
 async def startup():
+    try:
+        from fastapi.concurrency import run_in_threadpool
+        await run_in_threadpool(media.init_storage)
+    except Exception as e:  # storage is optional at boot; routes report truthfully if it stays down
+        logging.getLogger("media").warning("object storage init failed: %s", e)
     await db.users.create_index("email", unique=True)
     await db.sessions.create_index("expires_at", expireAfterSeconds=0)
     await db.sessions.create_index("token_hash")

@@ -1,153 +1,136 @@
-// Signature experience: spatial group creation (P2). Group nucleus, orbital members, physics birth animation,
-// pending gray → active vivid, ENVIAR A TODOS inside the field, formation links and collapse into the Mini-Orb.
+// Group creation (one or several groups) right after the legal steps. Each group card: editable name, members with state,
+// invitation options (WhatsApp link / share / contacts / manual), delete. "Continuar al mapa" completes onboarding.
 import Ionicons from "@react-native-vector-icons/ionicons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import { useEffect, useRef, useState } from "react";
-import { Pressable, TextInput, useWindowDimensions, View } from "react-native";
-import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
+import { useState } from "react";
+import { Alert, Platform, Pressable, ScrollView, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api, unavailableOf } from "@/src/api";
 import { useAuth } from "@/src/auth";
 import { InviteOptions } from "@/src/components/InviteOptions";
-import { OrbitalField, OrbitalMember } from "@/src/components/OrbitalField";
+import { PersonAvatar } from "@/src/components/orbs";
 import { AddMemberSheet, MemberInfo, MemberSheet, NewInvite } from "@/src/components/sheets";
-import { Button, showUnavailable, T, toast } from "@/src/components/ui";
-import { dispatchInvitation, Invitation } from "@/src/invites";
+import { Button, Pill, showUnavailable, T, toast } from "@/src/components/ui";
 import { fonts, makeStyles, radius, spacing, useTheme } from "@/src/theme";
 
-type Group = { id: string; name: string; members: (MemberInfo & { user_id?: string; color: string })[]; stats: any };
+type Group = { id: string; name: string; owner_id: string; my_role: string; members: MemberInfo[]; stats: { members: number; pending: number } };
 
-export default function GroupCreation() {
-  const router = useRouter();
-  const { user, reload } = useAuth();
-  const qc = useQueryClient();
-  const s = useStyles();
-  const { colors } = useTheme();
-  const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
-  const size = Math.min(width - spacing.xl * 2, 380);
-  const [phase, setPhase] = useState<"editing" | "forming" | "collapsing">("editing");
-  const [adding, setAdding] = useState(false);
-  const [selected, setSelected] = useState<MemberInfo | null>(null);
-  const [newIds, setNewIds] = useState<string[]>([]);
-  const [sending, setSending] = useState(false);
-  const nameRef = useRef<TextInput>(null);
+const confirm = (title: string, msg: string, onOk: () => void) => {
+  if (Platform.OS === "web") { if (window.confirm(`${title}\n${msg}`)) onOk(); return; }
+  Alert.alert(title, msg, [{ text: "Cancelar", style: "cancel" }, { text: "Borrar", style: "destructive", onPress: onOk }]);
+};
+
+export default function GroupOnboarding({ embedded }: { embedded?: boolean }) {
+  const router = useRouter(); const qc = useQueryClient(); const { user, reload } = useAuth();
+  const s = useStyles(); const { colors } = useTheme(); const insets = useSafeAreaInsets();
+  const [newName, setNewName] = useState("");
+  const [adding, setAdding] = useState<Group | null>(null);
+  const [selected, setSelected] = useState<{ g: Group; m: MemberInfo } | null>(null);
+  const [finishing, setFinishing] = useState(false);
 
   const groups = useQuery({ queryKey: ["groups"], queryFn: () => api<Group[]>("/groups") });
-  const group = groups.data?.[0];
-
-  const create = useMutation({
-    mutationFn: () => api<Group>("/groups", { method: "POST", json: { name: "Grupo 1" } }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["groups"] }),
-    onError: (e) => { const u = unavailableOf(e); if (u) showUnavailable(u); else toast((e as any).message, "error"); },
-  });
-  useEffect(() => { if (groups.isSuccess && groups.data.length === 0 && !create.isPending && !create.isError) create.mutate(); }, [groups.isSuccess, groups.data, create]);
-
-  const [name, setName] = useState<string | null>(null);
-  const rename = useMutation({
-    mutationFn: (n: string) => api(`/groups/${group!.id}`, { method: "PATCH", json: { name: n } }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["groups"] }),
-  });
-
-  const invite = useMutation({
-    mutationFn: (v: NewInvite) => api<{ invitation: Invitation; member: { id: string } }>(`/groups/${group!.id}/invitations`, { method: "POST", json: v }),
-    onSuccess: async (r) => { setNewIds((p) => [...p, r.member.id]); setAdding(false); await qc.invalidateQueries({ queryKey: ["groups"] }); },
-    onError: (e) => { const u = unavailableOf(e); if (u) { setAdding(false); showUnavailable(u); } else toast((e as any).message, "error"); },
-  });
-
-  const act = useMutation({
-    mutationFn: ({ path }: { path: string }) => api(path, { method: "POST" }),
-    onSuccess: () => { setSelected(null); qc.invalidateQueries({ queryKey: ["groups"] }); },
-    onError: (e: any) => toast(e.message, "error"),
-  });
-
-  const members: OrbitalMember[] = (group?.members ?? []).map((m) => ({
-    id: m.id, name: m.display_name, color: m.color, isMe: m.user_id === user?.id, isNew: newIds.includes(m.id),
-    status: m.status === "active" ? "active" : m.status === "declined" ? "declined" : m.status === "expired" ? "expired" : "pending",
-  }));
-  const pendingInvites = (group?.members ?? []).filter((m) => m.status === "pending" && m.invitation?.status === "prepared");
+  const onErr = (e: any) => { const u = unavailableOf(e); if (u) showUnavailable(u); else toast(e.message, "error"); };
+  const create = useMutation({ mutationFn: (name: string) => api<Group>("/groups", { method: "POST", json: { name } }), onSuccess: () => { setNewName(""); qc.invalidateQueries({ queryKey: ["groups"] }); }, onError: onErr });
+  const rename = useMutation({ mutationFn: ({ id, name }: { id: string; name: string }) => api(`/groups/${id}`, { method: "PATCH", json: { name } }), onSuccess: () => qc.invalidateQueries({ queryKey: ["groups"] }), onError: onErr });
+  const remove = useMutation({ mutationFn: (id: string) => api(`/groups/${id}`, { method: "DELETE" }), onSuccess: () => { toast("Grupo borrado", "success"); qc.invalidateQueries({ queryKey: ["groups"] }); }, onError: onErr });
+  const invite = useMutation({ mutationFn: ({ g, v }: { g: Group; v: NewInvite }) => api(`/groups/${g.id}/invitations`, { method: "POST", json: v }), onSuccess: () => { setAdding(null); qc.invalidateQueries({ queryKey: ["groups"] }); }, onError: (e) => { setAdding(null); onErr(e); } });
+  const act = useMutation({ mutationFn: (path: string) => api(path, { method: "POST" }), onSuccess: () => { setSelected(null); qc.invalidateQueries({ queryKey: ["groups"] }); }, onError: onErr });
+  const removeMember = useMutation({ mutationFn: ({ g, m }: { g: Group; m: MemberInfo }) => api(`/groups/${g.id}/members/${m.id}`, { method: "DELETE" }), onSuccess: () => { setSelected(null); qc.invalidateQueries({ queryKey: ["groups"] }); }, onError: onErr });
 
   const finish = async () => {
-    setPhase("forming");
-    setTimeout(() => setPhase("collapsing"), 1700);
-    setTimeout(async () => {
-      try { await api(`/groups/${group!.id}/formed`, { method: "POST" }); await reload(); } catch (e: any) { toast(e.message, "error"); }
-      router.replace({ pathname: "/map", params: { welcome: "1" } });
-    }, 2900);
+    const list = groups.data ?? [];
+    if (!list.length) return toast("Crea al menos un grupo o continúa sin grupo");
+    setFinishing(true);
+    try { await api(`/groups/${list[0].id}/formed`, { method: "POST" }); await reload(); router.replace({ pathname: "/map", params: { welcome: "1" } }); }
+    catch (e: any) { toast(e.message, "error"); } finally { setFinishing(false); }
   };
-
-  const sendAll = async () => {
-    if (!group) return;
-    setSending(true);
-    let launched = 0;
-    for (const m of pendingInvites) {
-      const full = { ...(m.invitation as any), name: m.display_name, group_name: group.name, membership: m.membership } as Invitation;
-      const r = await dispatchInvitation(full);
-      toast(`${m.display_name}: ${r.label}`, r.ok ? "success" : "error");
-      if (r.ok) launched++;
-    }
-    setSending(false);
-    await qc.invalidateQueries({ queryKey: ["groups"] });
-    if (launched === pendingInvites.length || pendingInvites.length === 0) finish();
-  };
-
-  if (!group) {
-    return <View style={[s.root, { alignItems: "center", justifyContent: "center" }]} testID="group-creation-loading"><T style={{ color: colors.muted }}>{create.isError ? "No se pudo crear el grupo" : "Preparando tu grupo…"}</T>
-      {create.isError ? <View style={{ marginTop: 16 }}><Button testID="group-retry" title="Reintentar" onPress={() => create.mutate()} /><Button testID="group-skip" title="Continuar sin grupo" variant="ghost" onPress={async () => { await api("/profile/onboarding-step", { method: "PUT", json: { step: "done" } }); await reload(); router.replace("/map"); }} /></View> : null}
-    </View>;
-  }
+  const skip = async () => { await api("/profile/onboarding-step", { method: "PUT", json: { step: "done" } }); await reload(); router.replace("/map"); };
+  const list = groups.data ?? [];
 
   return (
     <View style={s.root} testID="onboarding-group">
-      <View style={[s.top, { paddingTop: insets.top + spacing.lg }]}>
-        <T style={{ color: colors.muted, fontSize: 13 }}>Tu primer Grupo</T>
-        <View style={s.nameRow}>
-          <TextInput ref={nameRef} testID="group-name-input" style={s.nameInput} value={name ?? group.name} onChangeText={setName}
-            onEndEditing={() => { if (name && name !== group.name) rename.mutate(name); }} editable={phase === "editing"} returnKeyType="done" />
-          <Pressable testID="group-name-edit" onPress={() => nameRef.current?.focus()} style={s.editBtn}><Ionicons name="pencil" size={16} color={colors.muted} /></Pressable>
+      <ScrollView contentContainerStyle={{ paddingTop: embedded ? spacing.md : insets.top + spacing.lg, paddingHorizontal: spacing.xl, paddingBottom: 160, gap: spacing.lg }} keyboardShouldPersistTaps="handled">
+        {!embedded ? (<View><T weight="bold" style={{ fontSize: 28 }}>Tus grupos</T><T style={{ color: colors.muted, marginTop: 4 }}>Crea uno o varios círculos (familia, amigos, equipo). Cada grupo tiene sus propios miembros y permisos.</T></View>) : null}
+
+        {list.map((g) => <GroupCard key={g.id} g={g} me={user?.id} onRename={(name) => rename.mutate({ id: g.id, name })} onDelete={() => confirm("Borrar grupo", `Se eliminará "${g.name}" y sus invitaciones.`, () => remove.mutate(g.id))}
+          onAdd={() => setAdding(g)} onMember={(m) => setSelected({ g, m })} onChanged={() => qc.invalidateQueries({ queryKey: ["groups"] })} />)}
+
+        <View style={s.newCard} testID="new-group-card">
+          <T weight="bold">{list.length ? "Crear otro grupo" : "Crea tu primer grupo"}</T>
+          <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: spacing.sm }}>
+            <TextInput testID="new-group-name" style={s.input} placeholder={list.length ? "Nombre del grupo (p. ej. Amigos)" : "Nombre del grupo (p. ej. Familia)"} placeholderTextColor={colors.muted} value={newName} onChangeText={setNewName} returnKeyType="done" onSubmitEditing={() => newName.trim() && create.mutate(newName.trim())} />
+            <Pressable testID="new-group-create" onPress={() => create.mutate(newName.trim() || `Grupo ${list.length + 1}`)} disabled={create.isPending} style={s.addBtn}><Ionicons name="add" size={22} color={colors.onBrandPrimary} /></Pressable>
+          </View>
         </View>
-      </View>
+      </ScrollView>
 
-      <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
-        <OrbitalField members={members} size={size} phase={phase} groupName={name ?? group.name}
-          onMemberPress={(m) => { if (phase !== "editing") return; const full = group.members.find((x) => x.id === m.id); if (full && !m.isMe) setSelected(full); }}
-          center={phase === "editing" && members.length > 1 ? (
-            <Pressable testID="send-all-button" onPress={sendAll} disabled={sending} style={s.sendAll}>
-              <Ionicons name="paper-plane" size={16} color={colors.onBrandPrimary} />
-              <T weight="bold" style={{ color: colors.onBrandPrimary, fontSize: 11, textAlign: "center" }}>{sending ? "ENVIANDO…" : pendingInvites.length ? "ENVIAR A TODOS" : "FORMAR GRUPO"}</T>
-            </Pressable>
-          ) : undefined} />
-        {phase !== "editing" ? (
-          <Animated.View entering={FadeIn} exiting={FadeOut} style={{ position: "absolute", bottom: 24 }}>
-            <T weight="semibold" style={{ color: colors.muted }} testID="group-forming-label">{phase === "forming" ? "Formando el grupo…" : "Creando tu Mini-Orb…"}</T>
-          </Animated.View>
-        ) : null}
-      </View>
-
-      {phase === "editing" ? (
+      {!embedded ? (
         <View style={[s.actions, { paddingBottom: insets.bottom + spacing.lg }]}>
-          <InviteOptions groupId={group.id} groupName={name ?? group.name} onChanged={() => qc.invalidateQueries({ queryKey: ["groups"] })} />
-          <Button testID="add-member-button" title="Añadir persona a mano" icon="person-add" variant="secondary" onPress={() => setAdding(true)} />
-          <Button testID="group-continue-button" title={members.length > 1 ? "Continuar sin enviar ahora" : "Continuar sin invitar"} variant="ghost" onPress={finish} />
+          <Button testID="group-continue-button" title={list.length ? "Continuar al mapa" : "Continuar sin grupo"} icon="map" loading={finishing} onPress={list.length ? finish : skip} />
         </View>
       ) : null}
 
-      <AddMemberSheet visible={adding} onClose={() => setAdding(false)} loading={invite.isPending} onSubmit={(v) => invite.mutate(v)} />
-      <MemberSheet member={selected} onClose={() => setSelected(null)} canManage
-        onResend={() => selected?.invitation && act.mutate({ path: `/invitations/${selected.invitation.id}/resend` })}
-        onCancel={() => selected?.invitation && act.mutate({ path: `/invitations/${selected.invitation.id}/cancel` })} />
+      <AddMemberSheet visible={!!adding} onClose={() => setAdding(null)} loading={invite.isPending} onSubmit={(v) => adding && invite.mutate({ g: adding, v })} />
+      <MemberSheet member={selected?.m ?? null} onClose={() => setSelected(null)} canManage={!!selected && (selected.g.my_role === "owner" || selected.g.my_role === "admin")}
+        onResend={() => selected?.m.invitation && act.mutate(`/invitations/${selected.m.invitation.id}/resend`)}
+        onCancel={() => selected?.m.invitation && act.mutate(`/invitations/${selected.m.invitation.id}/cancel`)}
+        onRemove={() => selected && removeMember.mutate(selected)} />
+    </View>
+  );
+}
+
+function GroupCard({ g, me, onRename, onDelete, onAdd, onMember, onChanged }: { g: Group; me?: string; onRename: (n: string) => void; onDelete: () => void; onAdd: () => void; onMember: (m: MemberInfo) => void; onChanged: () => void }) {
+  const s = useStyles(); const { colors } = useTheme();
+  const [name, setName] = useState(g.name);
+  const [open, setOpen] = useState(true);
+  const canManage = g.my_role === "owner" || g.my_role === "admin";
+  const visible = g.members.filter((m) => m.status !== "removed");
+  return (
+    <View style={s.card} testID={`group-card-${g.id}`}>
+      <View style={s.nameRow}>
+        <View style={s.groupIcon}><Ionicons name="people" size={18} color={colors.onBrandPrimary} /></View>
+        <TextInput testID={`group-name-${g.id}`} style={s.nameInput} value={name} onChangeText={setName} editable={canManage} onEndEditing={() => { const n = name.trim(); if (n && n !== g.name) onRename(n); }} returnKeyType="done" />
+        <Pill label={`${g.stats.members}${g.stats.pending ? ` · ${g.stats.pending} pend.` : ""}`} tone="cyan" />
+        <Pressable testID={`group-toggle-${g.id}`} onPress={() => setOpen(!open)} hitSlop={8} style={s.iconBtn}><Ionicons name={open ? "chevron-up" : "chevron-down"} size={18} color={colors.onSurface} /></Pressable>
+      </View>
+      {open ? (
+        <View style={{ marginTop: spacing.md, gap: spacing.sm }}>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
+            {visible.map((m) => (
+              <Pressable key={m.id} testID={`member-chip-${m.id}`} onPress={() => m.user_id !== me && onMember(m)} style={s.memberChip}>
+                <PersonAvatar name={m.display_name} color={m.color ?? colors.brandPrimary} size={30} state={m.status === "active" ? "shared" : "pending_invitation"} />
+                <View><T weight="semibold" style={{ fontSize: 12 }} numberOfLines={1}>{m.display_name}{m.user_id === me ? " (tú)" : ""}</T><T style={{ fontSize: 10, color: colors.muted }}>{m.status === "active" ? (m.role === "owner" ? "Propietario" : m.role === "admin" ? "Admin" : "Miembro") : m.status === "pending" ? "Pendiente" : m.status}</T></View>
+              </Pressable>
+            ))}
+          </View>
+          {canManage ? (
+            <>
+              <InviteOptions groupId={g.id} groupName={g.name} onChanged={onChanged} />
+              <View style={{ flexDirection: "row", gap: spacing.sm }}>
+                <Pressable testID={`group-add-${g.id}`} onPress={onAdd} style={[s.opt, { flex: 1 }]}><Ionicons name="person-add" size={16} color={colors.onSurface} /><T weight="semibold" style={{ fontSize: 13 }}>Añadir a mano</T></Pressable>
+                {g.owner_id === me ? <Pressable testID={`group-delete-${g.id}`} onPress={onDelete} style={s.opt}><Ionicons name="trash" size={16} color={colors.error} /><T weight="semibold" style={{ fontSize: 13, color: colors.error }}>Borrar</T></Pressable> : null}
+              </View>
+            </>
+          ) : null}
+        </View>
+      ) : null}
     </View>
   );
 }
 
 const useStyles = makeStyles((c) => ({
   root: { flex: 1, backgroundColor: c.surface },
-  top: { paddingHorizontal: spacing.xl },
+  card: { backgroundColor: c.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: c.border, padding: spacing.md },
   nameRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
-  nameInput: { flex: 1, fontFamily: fonts.bold, fontSize: 28, color: c.onSurface, paddingVertical: 4 },
-  editBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: c.surfaceTertiary, alignItems: "center", justifyContent: "center" },
-  sendAll: { alignItems: "center", justifyContent: "center", gap: 4, width: "100%", height: "100%", borderRadius: radius.pill },
-  actions: { paddingHorizontal: spacing.xl, gap: spacing.xs },
+  groupIcon: { width: 36, height: 36, borderRadius: 18, backgroundColor: c.brandPrimary, alignItems: "center", justifyContent: "center" },
+  nameInput: { flex: 1, fontFamily: fonts.bold, fontSize: 18, color: c.onSurface, paddingVertical: 4 },
+  iconBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: c.surfaceTertiary, alignItems: "center", justifyContent: "center" },
+  memberChip: { flexDirection: "row", alignItems: "center", gap: 6, paddingRight: 10, paddingLeft: 4, height: 40, borderRadius: radius.pill, backgroundColor: c.surfaceTertiary, borderWidth: 1, borderColor: c.border, maxWidth: 170 },
+  opt: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm, minHeight: 44, paddingHorizontal: spacing.md, borderRadius: radius.md, backgroundColor: c.surfaceTertiary, borderWidth: 1, borderColor: c.border },
+  newCard: { backgroundColor: c.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: c.borderStrong, borderStyle: "dashed", padding: spacing.md },
+  input: { flex: 1, height: 48, borderRadius: radius.md, backgroundColor: c.surface, borderWidth: 1, borderColor: c.border, paddingHorizontal: spacing.md, fontFamily: fonts.regular, fontSize: 15, color: c.onSurface },
+  addBtn: { width: 48, height: 48, borderRadius: radius.md, backgroundColor: c.brandPrimary, alignItems: "center", justifyContent: "center" },
+  actions: { position: "absolute", left: 0, right: 0, bottom: 0, paddingHorizontal: spacing.xl, paddingTop: spacing.md, backgroundColor: c.surface, borderTopWidth: 1, borderColor: c.divider },
 }));

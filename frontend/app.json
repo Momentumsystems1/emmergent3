@@ -14,7 +14,7 @@
         "NSLocationWhenInUseUsageDescription": "Compartir tu ubicación con tu grupo",
         "NSCameraUsageDescription": "Grabar incidencias de la vía voluntariamente",
         "NSMicrophoneUsageDescription": "Registrar incidencias por voz",
-        "NSPhotoLibraryUsageDescription": "Elegir tu foto de perfil",
+        "NSPhotoLibraryUsageDescription": "Elegir tu foto de perfil para el mapa",
         "NSContactsUsageDescription": "Elegir a quién invitar a tu grupo"
       }
     },
@@ -29,7 +29,8 @@
         "ACCESS_FINE_LOCATION",
         "CAMERA",
         "RECORD_AUDIO",
-        "READ_CONTACTS"
+        "READ_CONTACTS",
+        "READ_MEDIA_IMAGES"
       ]
     },
     "web": {

@@ -15,6 +15,8 @@ export type User = {
   profile: { name: string; surname?: string | null } | null;
   avatar: { color: string; symbol: string; outline: string };
   onboarding: { completed: boolean; step: string };
+  has_photo?: boolean;
+  google?: { name?: string; picture?: string } | null;
 };
 
 type Ctx = {
@@ -86,7 +88,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!u.onboarding?.completed) {
       const local = await getLocalOnboarding();
       await api("/consents", { method: "POST", json: { document: "terms", version: "2026-06-01", accepted: true, accepted_at_client: local.terms_accepted_at ?? new Date().toISOString(), ...clientMeta } }).catch(() => null);
-      await setLocalOnboarding({ step: "consent" });
+      await setLocalOnboarding({ step: "profile" });
     }
     cleanWebUrl();
     return u;

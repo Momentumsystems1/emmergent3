@@ -23,4 +23,6 @@ export type MapCanvasProps = {
   traffic?: boolean;
   incidents?: Incident[];
   onIncidentPress?: (i: Incident) => void;
+  /** Camera pitch in degrees (0 = flat, ~50 = 3D perspective). Native only. */
+  pitch3d?: number;
 };

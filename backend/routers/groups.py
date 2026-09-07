@@ -131,6 +131,18 @@ async def rename_group(group_id: str, body: GroupUpdate, user=Depends(current_us
     return await group_view(await db.groups.find_one({"_id": oid(group_id)}), str(user["_id"]))
 
 
+@router.delete("/groups/{group_id}")
+async def delete_group(group_id: str, user=Depends(current_user)):
+    """Owner-only soft delete; members lose access immediately, evidence is kept."""
+    g = await _group_for(user, group_id, admin=True)
+    if g["owner_id"] != str(user["_id"]):
+        raise HTTPException(403, "Solo el propietario puede borrar el grupo")
+    await db.groups.update_one({"_id": oid(group_id)}, {"$set": {"deleted_at": now()}})
+    await db.members.update_many({"group_id": group_id}, {"$set": {"status": "removed", "removed_at": now()}})
+    await db.invitations.update_many({"group_id": group_id, "status": {"$in": ["prepared", "dispatched", "open"]}}, {"$set": {"status": "cancelled", "cancelled_at": now()}})
+    return {"ok": True}
+
+
 @router.post("/groups/{group_id}/formed")
 async def mark_formed(group_id: str, user=Depends(current_user)):
     await _group_for(user, group_id, admin=True)

@@ -11,14 +11,18 @@ import * as Location from "expo-location";
 import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
-import Animated, { FadeIn, FadeInDown, FadeInUp, FadeOut } from "react-native-reanimated";
+import Animated, { FadeInDown, FadeInUp, FadeOut } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api } from "@/src/api";
 import { useAuth } from "@/src/auth";
 import { Incident, INCIDENT_TYPE, incidentIcon, LatLng, MapCanvas, MapPerson } from "@/src/components/MapCanvas";
-import { MembersRail } from "@/src/components/MembersRail";
-import { SharingFab, SharingPanel } from "@/src/components/SharingFab";
+import { GroupsRail } from "@/src/components/GroupsRail";
+import { MainMenu } from "@/src/components/MainMenu";
+import { SharingPanel } from "@/src/components/SharingFab";
+import { UserCard } from "@/src/components/UserCard";
+import { UserPhoto } from "@/src/components/UserPhoto";
+import { LinearGradient } from "expo-linear-gradient";
 import { Button, Glass, T, toast } from "@/src/components/ui";
 import { useLocationSharing } from "@/src/hooks/useLocationSharing";
 import { fonts, makeStyles, radius, spacing, useTheme } from "@/src/theme";
@@ -38,6 +42,9 @@ export default function MapHome() {
   const [greet, setGreet] = useState(true);
   const [menu, setMenu] = useState(false);
   const [sharing, setSharing] = useState(false);
+  const [mainMenu, setMainMenu] = useState(false);
+  const [userOpen, setUserOpen] = useState(false);
+  const [sosOpen, setSosOpen] = useState(false);
   const [locBanner, setLocBanner] = useState(false);
   const [sel, setSel] = useState<LatLng | null>(null);
   const [myPos, setMyPos] = useState<LatLng | null>(null);
@@ -88,8 +95,8 @@ export default function MapHome() {
   // eslint-disable-next-line react-hooks/set-state-in-effect, react-hooks/exhaustive-deps -- one-shot centering on the first GPS fix
   useEffect(() => { if (mePos && !focus) setFocus({ lat: mePos.lat, lng: mePos.lng, key: 1 }); }, [mePos?.lat, mePos?.lng, focus]);
 
-  const closeAll = () => { setMenu(false); setSel(null); setSharing(false); setTrafficPanel(false); setIncSel(null); };
-  const anyOpen = menu || !!sel || sharing || trafficPanel || !!incSel || (locBanner && loc.perm !== "granted");
+  const closeAll = () => { setMenu(false); setSel(null); setSharing(false); setTrafficPanel(false); setIncSel(null); setUserOpen(false); setSosOpen(false); };
+  const anyOpen = menu || !!sel || sharing || trafficPanel || !!incSel || userOpen || sosOpen || (locBanner && loc.perm !== "granted");
   const onMapPress = (c?: LatLng) => { if (anyOpen) { closeAll(); setLocBanner(false); return; } if (c) setSel(c); };
   const recenter = () => { closeAll(); if (!mePos) { toast(loc.perm === "granted" ? "Obteniendo tu ubicación…" : "Permite la ubicación para centrarte"); if (loc.perm !== "granted") setLocBanner(true); return; } setFocus({ ...mePos, key: (focus?.key ?? 0) + 1 }); };
   const checkIn = async () => {
@@ -98,7 +105,20 @@ export default function MapHome() {
   };
   const originParams = originParamsOf(mePos);
   const selName = reverse.data?.name ?? (sel ? `${sel.lat.toFixed(5)}, ${sel.lng.toFixed(5)}` : "");
-  const pendingCount = group?.stats?.pending ?? 0;
+  const userColor = user?.avatar?.color ?? colors.brandPrimary;
+  const railGroups = (groups.data ?? []).map((g: any) => ({ id: g.id, name: g.name, attention: ((g.my_role === "owner" || g.my_role === "admin") ? (g.stats?.pending ?? 0) : 0) + (pendingTrips.data ?? []).filter((t) => t.group_id === g.id).length }));
+  const tasks = [
+    ...(pendingTrips.data ?? []).map((t) => ({ id: `trip-${t.id}`, kind: "trip", label: `Viaje a ${t.destination?.name?.split(",")[0]} (${t.leader_name})`, onPress: () => { closeAll(); setDismissedTrip(null); } })),
+    ...(groups.data ?? []).filter((g: any) => (g.my_role === "owner" || g.my_role === "admin") && g.stats?.pending).map((g: any) => ({ id: `inv-${g.id}`, kind: "invite", label: `${g.stats.pending} invitación(es) pendiente(s) en ${g.name}`, onPress: () => { closeAll(); router.push(`/group/${g.id}`); } })),
+  ];
+  const sendSos = async () => {
+    const list = groups.data ?? [];
+    if (!list.length) return toast("Crea un grupo para poder enviar un SOS");
+    try {
+      await Promise.all(list.map((g: any) => api("/events", { method: "POST", json: { group_id: g.id, kind: "emergency", severity: "critical", message: "SOS: necesito ayuda", ...(mePos ? { lat: mePos.lat, lng: mePos.lng } : {}) } })));
+      toast(`SOS enviado a ${list.length === 1 ? list[0].name : `${list.length} grupos`}`, "success"); setSosOpen(false);
+    } catch (e: any) { toast(e.message, "error"); }
+  };
 
   return (
     <View style={s.root} testID="map-home">
@@ -106,27 +126,21 @@ export default function MapHome() {
         traffic={traffic} incidents={traffic ? incidents.data ?? [] : []} onIncidentPress={(i) => { closeAll(); setIncSel(i); }}
         onPersonPress={(p) => { closeAll(); if (p.member_id === "me-local") router.push("/profile"); else router.push(`/person/${p.member_id}?group=${group?.id}`); }} />
 
-      {/* Compact navigator pill */}
+      {/* Top bar: user color, photo, name, search, menu */}
       <View style={[s.top, { paddingTop: insets.top + spacing.sm }]} pointerEvents="box-none">
-        <View style={s.bar} testID="search-bar">
-          <Pressable testID="search-bar-input" onPress={() => { closeAll(); router.push({ pathname: "/navigate", params: originParams }); }} style={s.barLeft}>
-            <Ionicons name="search" size={18} color={colors.brandPrimary} />
-            {greet ? (
-              <Animated.View key="greet" exiting={FadeOut} style={{ flex: 1 }}><T weight="semibold" style={s.barTxt} numberOfLines={1} testID="bar-greeting">Hola {name || "👋"}</T></Animated.View>
-            ) : (
-              <Animated.View key="ask" entering={FadeIn} style={{ flex: 1 }}><T weight="semibold" style={s.barTxt} numberOfLines={1} testID="bar-prompt">¿A dónde vamos?</T></Animated.View>
-            )}
+        <View style={[s.bar, { backgroundColor: userColor }]} testID="top-bar">
+          <Pressable testID="profile-shortcut" onPress={() => { closeAll(); setUserOpen(true); }} style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm, flex: 1 }}>
+            <UserPhoto userId={user?.id} name={name} color={userColor} size={36} hasPhoto={user?.has_photo} ring />
+            <View style={{ flex: 1 }}>
+              <T weight="bold" style={{ fontSize: 15, color: colors.onBrandPrimary }} numberOfLines={1} testID="bar-name">{name || "Tú"}</T>
+              <T style={{ fontSize: 11, color: colors.onBrandPrimary, opacity: 0.85 }} numberOfLines={1} testID={greet ? "bar-greeting" : "bar-prompt"}>{greet ? "Hola, bienvenido" : group ? group.name : "Sin grupo"}</T>
+            </View>
           </Pressable>
-          <Pressable testID="search-bar-group" onPress={() => { closeAll(); router.push(group ? `/group/${group.id}` : "/onboarding/group"); }} style={s.barIcon} accessibilityLabel="Grupo">
-            <Ionicons name="people" size={18} color={colors.onSurface} />
-            {pendingCount ? <View style={s.badge}><T weight="bold" style={{ fontSize: 9, color: colors.onPending }}>{pendingCount}</T></View> : null}
-          </Pressable>
-          <Pressable testID="profile-shortcut" onPress={() => { closeAll(); router.push("/profile"); }} style={[s.barIcon, s.avatar]} accessibilityLabel="Perfil">
-            <T weight="bold" style={{ fontSize: 13, color: colors.onBrandPrimary }}>{(name || "?").charAt(0).toUpperCase()}</T>
-          </Pressable>
+          <Pressable testID="search-bar-input" onPress={() => { closeAll(); router.push({ pathname: "/navigate", params: originParams }); }} style={s.barIcon} accessibilityLabel="¿A dónde vamos?"><Ionicons name="search" size={20} color={colors.onBrandPrimary} /></Pressable>
+          <Pressable testID="menu-button" onPress={() => { closeAll(); setMainMenu(true); }} style={s.barIcon} accessibilityLabel="Menú"><Ionicons name="menu" size={22} color={colors.onBrandPrimary} /></Pressable>
         </View>
         {locBanner && sharesLocation && loc.perm !== "granted" ? (
-          <Animated.View entering={FadeInDown} exiting={FadeOut} style={{ marginTop: spacing.sm }}>
+          <Animated.View entering={FadeInDown} exiting={FadeOut} style={{ marginTop: spacing.sm + 56 }}>
             <Glass style={{ padding: spacing.md }} testID="location-permission-banner">
               <T weight="bold" style={{ fontSize: 13 }}>Permiso de ubicación del dispositivo</T>
               <T style={{ color: colors.muted, fontSize: 12, marginTop: 2 }}>Compartes tu ubicación con tu grupo; Sentinel necesita el permiso del sistema (solo con la app abierta).</T>
@@ -138,7 +152,7 @@ export default function MapHome() {
           </Animated.View>
         ) : null}
         {tripInvite && !sel && !menu ? (
-          <Animated.View entering={FadeInDown} exiting={FadeOut} style={{ marginTop: spacing.sm }}>
+          <Animated.View entering={FadeInDown} exiting={FadeOut} style={{ marginTop: spacing.sm + (locBanner && sharesLocation && loc.perm !== "granted" ? 0 : 56) }}>
             <Glass style={{ padding: spacing.md }} testID="trip-invite-banner">
               <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
                 <Ionicons name="car-sport" size={18} color={colors.brandPrimary} />
@@ -153,8 +167,11 @@ export default function MapHome() {
         ) : null}
       </View>
 
-      {/* Left rail: group members → tap centers the map on them */}
-      <MembersRail people={people} top={insets.top + 72 + (locBanner && sharesLocation && loc.perm !== "granted" ? 120 : 0)} onFocus={(p) => { closeAll(); setFocus({ lat: p.lat!, lng: p.lng!, key: (focus?.key ?? 0) + 1 }); }} />
+      {/* Left rail: groups (pulsing red when something needs attention) */}
+      <GroupsRail groups={railGroups} top={insets.top + 76} activeId={group?.id} onPress={(g) => { closeAll(); router.push(`/group/${g.id}`); }} />
+
+      {/* Top-right user card */}
+      <UserCard pos={mePos} tasks={tasks} top={insets.top + 76} sharing={sharesLocation && loc.perm === "granted"} open={userOpen} onOpen={() => { closeAll(); setUserOpen(true); }} onClose={() => setUserOpen(false)} />
 
       {/* Right-side FABs: sharing + recenter + tools */}
       <View style={[s.fabs, { bottom: insets.bottom + spacing.lg }]} pointerEvents="box-none">
@@ -168,7 +185,12 @@ export default function MapHome() {
             <MenuItem testID="qa-privacy" icon="lock-closed" label="Privacidad" onPress={() => { setMenu(false); router.push("/privacy"); }} />
           </Animated.View>
         ) : null}
-        <SharingFab open={sharing} onPress={() => { const next = !sharing; closeAll(); setSharing(next); }} />
+        <Pressable testID="fab-privacy" onPress={() => { const next = !sharing; closeAll(); setSharing(next); }} style={[s.fab, { backgroundColor: colors.privacy, borderColor: colors.privacy }]} accessibilityLabel="Privacidad: qué comparto y con quién">
+          <Ionicons name="lock-closed" size={20} color={colors.onPrivacy} />
+        </Pressable>
+        <Pressable testID="fab-sos" onPress={() => { const next = !sosOpen; closeAll(); setSosOpen(next); }} accessibilityLabel="SOS">
+          <LinearGradient colors={[colors.sosStart, colors.sosEnd]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[s.fab, s.sos]}><T weight="bold" style={{ fontSize: 12, color: colors.onSos, letterSpacing: 0.5 }}>SOS</T></LinearGradient>
+        </Pressable>
         <Pressable testID="fab-traffic" onPress={() => { const on = !traffic; closeAll(); setTraffic(on); setTrafficPanel(on); }} style={[s.fab, traffic && s.fabOn]} accessibilityLabel="Tráfico e incidencias">
           <Ionicons name="car" size={20} color={traffic ? colors.onBrandPrimary : colors.onSurface} />
           {traffic && incidents.data?.length ? <View style={s.fabBadge}><T weight="bold" style={{ fontSize: 9, color: colors.onWarning }}>{Math.min(99, incidents.data.length)}</T></View> : null}
@@ -232,6 +254,20 @@ export default function MapHome() {
         </Animated.View>
       ) : null}
 
+      {sosOpen ? (
+        <Animated.View entering={FadeInDown.duration(160)} exiting={FadeOut.duration(120)} style={[s.selCard, { bottom: insets.bottom + spacing.lg, borderColor: colors.error }]} testID="sos-panel">
+          <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
+            <Ionicons name="alert-circle" size={22} color={colors.error} />
+            <View style={{ flex: 1 }}><T weight="bold" style={{ fontSize: 14 }}>Enviar SOS a {groups.data?.length === 1 ? groups.data[0].name : `tus ${groups.data?.length ?? 0} grupos`}</T><T style={{ fontSize: 11, color: colors.muted }}>Aviso de emergencia con prioridad{mePos ? " y tu posición actual" : ""}. Se registra como evidencia.</T></View>
+          </View>
+          <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: spacing.sm }}>
+            <Button small testID="sos-confirm" title="Enviar SOS" icon="alert" variant="danger" onPress={sendSos} />
+            <Button small testID="sos-cancel" title="Cancelar" variant="ghost" onPress={() => setSosOpen(false)} />
+          </View>
+        </Animated.View>
+      ) : null}
+      <MainMenu visible={mainMenu} onClose={() => setMainMenu(false)} groups={groups.data ?? []} />
+
       {!group && groups.isSuccess && !sel && !menu ? (
         <View style={[s.hint, { bottom: insets.bottom + spacing.lg }]} pointerEvents="box-none">
           <Pressable testID="create-group-cta" onPress={() => router.push("/onboarding/group")} style={s.hintBtn}><Ionicons name="add-circle" size={18} color={colors.onBrandPrimary} /><T weight="semibold" style={{ fontSize: 13, color: colors.onBrandPrimary }}>Crea tu grupo</T></Pressable>
@@ -254,10 +290,11 @@ function Tool({ icon, label, onPress, testID, primary }: { icon: string; label: 
 const useStyles = makeStyles((c) => ({
   root: { flex: 1, backgroundColor: c.mapTint },
   top: { position: "absolute", left: 0, right: 0, paddingHorizontal: spacing.md },
-  bar: { flexDirection: "row", alignItems: "center", backgroundColor: c.glassStrong, borderRadius: radius.pill, borderWidth: 1, borderColor: c.border, padding: 4, gap: 4, shadowColor: c.surfaceInverse, shadowOpacity: 0.15, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 5 },
+  bar: { flexDirection: "row", alignItems: "center", borderRadius: radius.lg, padding: 6, paddingLeft: 8, gap: 4, shadowColor: c.surfaceInverse, shadowOpacity: 0.2, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 5 },
   barLeft: { flex: 1, flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingLeft: spacing.sm, height: 44 },
   barTxt: { fontSize: 15 },
-  barIcon: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", backgroundColor: c.surfaceTertiary },
+  barIcon: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.18)" },
+  sos: { borderWidth: 1.5, borderColor: "rgba(255,255,255,0.85)" },
   avatar: { backgroundColor: c.brandPrimary, width: 36, height: 36, borderRadius: 18, marginRight: 2 },
   badge: { position: "absolute", top: -2, right: -2, minWidth: 16, height: 16, borderRadius: 8, backgroundColor: c.pending, alignItems: "center", justifyContent: "center", paddingHorizontal: 3 },
   fabs: { position: "absolute", right: spacing.md, alignItems: "flex-end", gap: spacing.sm },

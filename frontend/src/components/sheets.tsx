@@ -77,7 +77,7 @@ function Option({ active, onPress, title, sub, icon, testID }: { active: boolean
   );
 }
 
-export type MemberInfo = { id: string; display_name: string; status: string; membership: string; role: string; expires_at?: string | null; location_state?: string;
+export type MemberInfo = { id: string; display_name: string; status: string; membership: string; role: string; expires_at?: string | null; location_state?: string; user_id?: string | null; color?: string;
   invitation?: { id: string; status: string; channel: string; created_at: string; dispatched_at?: string | null } };
 
 export function MemberSheet({ member, onClose, onResend, onCancel, onRemove, canManage }: { member: MemberInfo | null; onClose: () => void; onResend?: () => void; onCancel?: () => void; onRemove?: () => void; canManage: boolean }) {

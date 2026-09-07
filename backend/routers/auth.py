@@ -66,6 +66,7 @@ async def _issue(user: dict) -> TokenResponse:
 def public_user(user: dict) -> dict:
     u = serialize(user)
     u.pop("password_hash", None)
+    u["has_photo"] = bool(u.pop("photo", None))
     return u
 
 
@@ -74,7 +75,7 @@ async def register(c: Credentials):
     doc = {
         "email": c.email.lower(), "password_hash": _hash_pw(c.password), "created_at": now(), "deleted_at": None,
         "language": c.language, "plan": "free", "account_role": "owner",
-        "delegated_permissions": [], "onboarding": {"completed": False, "step": "consent"},
+        "delegated_permissions": [], "onboarding": {"completed": False, "step": "profile"},
         "profile": None, "avatar": {"color": "#22D3EE", "symbol": "pin", "outline": "solid"},
     }
     try:
@@ -120,7 +121,7 @@ async def google_session(body: SessionBody):
     else:
         doc = {"email": email, "password_hash": None, "auth_provider": "google", "google": google, "created_at": now(), "deleted_at": None,
                "language": "es", "plan": "free", "account_role": "owner", "delegated_permissions": [],
-               "onboarding": {"completed": False, "step": "consent"}, "profile": None,
+               "onboarding": {"completed": False, "step": "profile"}, "profile": None,
                "avatar": {"color": "#22D3EE", "symbol": "pin", "outline": "solid"}}
         try:
             res = await db.users.insert_one(doc)

@@ -91,7 +91,7 @@ async def group_positions(group_id: str, user=Depends(current_user)):
         eff = await effective_permissions(m["user_id"])
         exact = is_granted(eff, "exact_location", group_id)
         approx = is_granted(eff, "approx_location", group_id)
-        base = {"member_id": str(m["_id"]), "user_id": m["user_id"], "name": m["display_name"], "color": m["color"],
+        base = {"member_id": str(m["_id"]), "user_id": m["user_id"], "name": m["display_name"], "color": m["color"], "has_photo": bool(m.get("has_photo")),
                 "role": m["role"], "is_me": m["user_id"] == viewer}
         pos = await db.positions_latest.find_one({"user_id": m["user_id"]})
         if not (exact or approx):

@@ -52,3 +52,9 @@ Ver /app/memory/test_credentials.md.
 - Deuda: props web deprecadas (`shadow*`→`boxShadow`, `pointerEvents` en style) señaladas por el tester; testID `account-mode-login`.
 - Sesión 5: Google sign-in gestionado por Emergent (`POST /auth/session` canjea session_id una vez, upsert por email, emite JWT propio;
   `src/googleAuth.ts` + `AuthProvider` procesan `session_id` de la URL antes que la sesión guardada; botón en onboarding/account).
+- Sesión 6 (rediseño solicitado, fases ①②): portada `/welcome` (PNG + logo provisionales en assets/images), flujo legal → cuenta → perfil (con foto
+  vía Emergent Object Storage, `routers/media.py`) → creación de uno o varios grupos (`onboarding/group.tsx` reescrito, sin Orb; DELETE /groups/{id}) → mapa.
+  Mapa: barra superior con color/foto/nombre + lupa + hamburguesa (MainMenu), tarjeta de usuario arriba-derecha (lugar, batería expo-battery, tareas),
+  carril izquierdo de GRUPOS con latido rojo (GroupsRail), FAB Privacidad fucsia (SharingPanel) + SOS rojo degradado (evento emergency a todos los grupos),
+  cámara 3D nativa (pitch 50, edificios, marcador propio plano anclado). Pendientes fases ③–⑥: menú completo del punto (geocerca, guardar sitio, evento
+  programado, ETA del círculo, incidencia), edición/permisos por miembro, métricas/horarios de visibilidad en hamburguesa, overlay de emergencias.

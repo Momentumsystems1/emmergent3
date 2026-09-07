@@ -28,23 +28,25 @@ const LIGHT_STYLE = [
   { featureType: "poi", stylers: [{ visibility: "off" }] },
 ];
 
-export function MapCanvas({ people, pins = [], polyline, onPersonPress, center, zoomDelta = 0.01, onMapPress, onMapLongPress, onUserPan, selected, traffic, incidents = [], onIncidentPress }: MapCanvasProps) {
+export function MapCanvas({ people, pins = [], polyline, onPersonPress, center, zoomDelta = 0.01, onMapPress, onMapLongPress, onUserPan, selected, traffic, incidents = [], onIncidentPress, pitch3d = 50 }: MapCanvasProps) {
   const { scheme, colors } = useTheme();
   const ref = useRef<MapView>(null);
   const tiles = `${BASE}/mobility/tiles`;
   const located = people.filter((p) => p.state === "shared" && p.lat != null);
   const me = located.find((p) => p.is_me);
   const c = center ?? (me ? { lat: me.lat!, lng: me.lng! } : located[0] ? { lat: located[0].lat!, lng: located[0].lng! } : { lat: 40.4168, lng: -3.7038 });
+  // 3D perspective: pitched camera + buildings; the "me" marker is flat (anchored to the ground) so it rotates/scales with
+  // the map's perspective and zoom instead of floating as a screen-space billboard.
   useEffect(() => {
-    if (center) ref.current?.animateToRegion({ latitude: center.lat, longitude: center.lng, latitudeDelta: zoomDelta, longitudeDelta: zoomDelta }, 600);
+    if (center) ref.current?.animateCamera({ center: { latitude: center.lat, longitude: center.lng }, pitch: pitch3d, zoom: Math.log2(360 / zoomDelta), heading: 0 }, { duration: 600 });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [center?.lat, center?.lng, center?.key]);
   const coord = (e: any) => ({ lat: e.nativeEvent.coordinate.latitude, lng: e.nativeEvent.coordinate.longitude });
   return (
     <View style={{ flex: 1, backgroundColor: colors.mapTint }} testID="map-canvas">
       <MapView ref={ref} style={{ flex: 1 }} customMapStyle={scheme === "dark" ? DARK_STYLE : LIGHT_STYLE} userInterfaceStyle={scheme}
-        initialRegion={{ latitude: c.lat, longitude: c.lng, latitudeDelta: center ? zoomDelta : 0.06, longitudeDelta: center ? zoomDelta : 0.06 }}
-        showsCompass={false} toolbarEnabled={false} showsMyLocationButton={false}
+        initialCamera={{ center: { latitude: c.lat, longitude: c.lng }, pitch: pitch3d, heading: 0, zoom: Math.log2(360 / (center ? zoomDelta : 0.06)), altitude: 1200 }}
+        showsBuildings pitchEnabled rotateEnabled showsCompass={false} toolbarEnabled={false} showsMyLocationButton={false}
         onPress={(e) => { if ((e.nativeEvent as any).action === "marker-press") return; onMapPress?.(coord(e)); }}
         onLongPress={(e) => onMapLongPress?.(coord(e))} onPanDrag={onUserPan ? () => onUserPan() : undefined}>
         {/* Azure Maps base (road / dark) + optional traffic-flow layer, proxied by the backend; incidents are markers */}
@@ -58,8 +60,14 @@ export function MapCanvas({ people, pins = [], polyline, onPersonPress, center, 
           </Marker>
         ))}
         {located.map((p) => (
-          <Marker key={p.member_id} coordinate={{ latitude: p.lat!, longitude: p.lng! }} onPress={() => onPersonPress?.(p)} anchor={{ x: 0.4, y: 0.6 }} testID={`map-person-${p.member_id}`}>
-            <PersonAvatar name={p.name} color={p.color} state="shared" size={p.is_me ? 50 : 42} />
+          <Marker key={p.member_id} coordinate={{ latitude: p.lat!, longitude: p.lng! }} onPress={() => onPersonPress?.(p)} anchor={p.is_me ? { x: 0.5, y: 0.5 } : { x: 0.4, y: 0.6 }} flat={!!p.is_me} testID={`map-person-${p.member_id}`}>
+            {p.is_me ? (
+              <View style={{ width: 64, height: 64, alignItems: "center", justifyContent: "center" }}>
+                <View style={{ position: "absolute", width: 64, height: 64, borderRadius: 32, backgroundColor: p.color, opacity: 0.18 }} />
+                <View style={{ position: "absolute", width: 40, height: 40, borderRadius: 20, backgroundColor: p.color, opacity: 0.35 }} />
+                <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: p.color, borderWidth: 3, borderColor: colors.glassStrong, shadowColor: colors.surfaceInverse, shadowOpacity: 0.4, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 4 }} />
+              </View>
+            ) : <PersonAvatar name={p.name} color={p.color} state="shared" size={42} />}
           </Marker>
         ))}
         {pins.map((p) => <Marker key={p.id} coordinate={{ latitude: p.lat, longitude: p.lng }} title={p.title} pinColor={p.color ?? colors.brandSecondary} />)}

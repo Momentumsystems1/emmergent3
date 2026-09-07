@@ -8,7 +8,7 @@ import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { api } from "@/src/api";
 import { useAuth } from "@/src/auth";
 import { OnboardingScreen } from "@/src/components/OnboardingScreen";
-import { PersonAvatar } from "@/src/components/orbs";
+import { PhotoPicker } from "@/src/components/PhotoPicker";
 import { T, toast } from "@/src/components/ui";
 import { AVATAR_COLORS, SYMBOLS } from "@/src/copy";
 import { fonts, makeStyles, radius, spacing, useTheme } from "@/src/theme";
@@ -39,7 +39,7 @@ export default function Profile() {
       <OnboardingScreen step="profile" testID="onboarding-profile" title="Tu identidad en el mapa" body="Solo pedimos lo necesario. Tu avatar combina un símbolo de geolocalización con tu inicial o foto en la esquina superior derecha."
         primary="Continuar" onPrimary={save} loading={loading} primaryDisabled={name.trim().length < 1}>
         <View style={{ alignItems: "center", marginBottom: spacing.xl }} testID="avatar-preview">
-          <PersonAvatar name={name || "?"} color={color} size={72} symbol={symbol} />
+          <PhotoPicker userId={user?.id} name={name || "?"} color={color} hasPhoto={user?.has_photo} onUploaded={() => reload()} />
         </View>
         <View style={{ gap: spacing.md }}>
           <TextInput testID="profile-name-input" style={s.input} placeholder="Nombre" placeholderTextColor={colors.muted} value={name} onChangeText={setName} />
@@ -60,7 +60,6 @@ export default function Profile() {
               </Pressable>
             ))}
           </View>
-          <T style={{ color: colors.muted, fontSize: 12, marginTop: spacing.sm }}>Foto e ilustración personalizada: SERVICIO NO CONFIGURADO (almacenamiento de imágenes pendiente). Formatos previstos: PNG/JPG, 1:1, 512×512 px, máx. 2 MB, con transparencia.</T>
         </View>
       </OnboardingScreen>
     </KeyboardAvoidingView>

@@ -273,9 +273,12 @@ async def map_tile(tileset: str, z: int, x: int, y: int):
     """Raster tile proxy (keeps the Azure key server-side; map SDKs cannot send auth headers for tiles)."""
     if tileset not in TILESETS or not AZURE_MAPS_KEY or not (0 <= z <= 20):
         return _Response(status_code=404)
-    async with httpx.AsyncClient(timeout=10) as c:
-        r = await c.get(f"{_AZ}/map/tile", params={"api-version": "2024-04-01", "tilesetId": TILESETS[tileset], "zoom": z, "x": x, "y": y,
-                                                 "tileSize": 256, "language": "es-ES", "subscription-key": AZURE_MAPS_KEY})
+    try:
+        async with httpx.AsyncClient(timeout=10) as c:
+            r = await c.get(f"{_AZ}/map/tile", params={"api-version": "2024-04-01", "tilesetId": TILESETS[tileset], "zoom": z, "x": x, "y": y,
+                                                     "tileSize": 256, "language": "es-ES", "subscription-key": AZURE_MAPS_KEY})
+    except httpx.HTTPError:
+        return _Response(status_code=504)
     if r.status_code != 200:
         return _Response(status_code=r.status_code)
     ttl = 300 if tileset == "traffic" else 86400

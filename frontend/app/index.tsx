@@ -7,8 +7,8 @@ import { getLocalOnboarding, useAuth } from "@/src/auth";
 import { T } from "@/src/components/ui";
 import { useTheme } from "@/src/theme";
 
-const LOCAL_ROUTES: Record<string, string> = { terms: "/onboarding/terms", data: "/onboarding/data", transparency: "/onboarding/transparency", security: "/onboarding/security", account: "/onboarding/account" };
-const SERVER_ROUTES: Record<string, string> = { consent: "/onboarding/consent", profile: "/onboarding/profile", group: "/onboarding/group", done: "/map" };
+const LOCAL_ROUTES: Record<string, string> = { terms: "/welcome", data: "/onboarding/data", transparency: "/onboarding/transparency", security: "/onboarding/security", account: "/onboarding/account" };
+const SERVER_ROUTES: Record<string, string> = { consent: "/onboarding/profile", profile: "/onboarding/profile", group: "/onboarding/group", done: "/map" };
 
 export default function Index() {
   const { user, loading } = useAuth();
@@ -20,7 +20,7 @@ export default function Index() {
     (async () => {
       if (user) {
         if (user.onboarding?.completed) return setTarget("/map");
-        return setTarget(SERVER_ROUTES[user.onboarding?.step] ?? "/onboarding/consent");
+        return setTarget(SERVER_ROUTES[user.onboarding?.step] ?? "/onboarding/profile");
       }
       const local = await getLocalOnboarding();
       setTarget(LOCAL_ROUTES[local.step] ?? "/onboarding/terms");

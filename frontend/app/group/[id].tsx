@@ -3,7 +3,7 @@ import Ionicons from "@react-native-vector-icons/ionicons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
-import { Pressable, ScrollView, useWindowDimensions, View } from "react-native";
+import { Alert, Platform, Pressable, ScrollView, TextInput, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api, unavailableOf } from "@/src/api";
@@ -11,9 +11,14 @@ import { useAuth } from "@/src/auth";
 import { InviteOptions } from "@/src/components/InviteOptions";
 import { OrbitalField } from "@/src/components/OrbitalField";
 import { AddMemberSheet, MemberInfo, MemberSheet } from "@/src/components/sheets";
-import { Button, Header, Pill, showUnavailable, T, toast } from "@/src/components/ui";
+import { Button, Pill, showUnavailable, T, toast } from "@/src/components/ui";
 import { dispatchInvitation } from "@/src/invites";
-import { makeStyles, radius, spacing, useTheme } from "@/src/theme";
+import { fonts, makeStyles, radius, spacing, useTheme } from "@/src/theme";
+
+const confirmDelete = (title: string, msg: string, onOk: () => void) => {
+  if (Platform.OS === "web") { if (window.confirm(`${title}\n${msg}`)) onOk(); return; }
+  Alert.alert(title, msg, [{ text: "Cancelar", style: "cancel" }, { text: "Borrar", style: "destructive", onPress: onOk }]);
+};
 
 export default function GroupDetail() {
   const { id, tab } = useLocalSearchParams<{ id: string; tab?: string }>();
@@ -26,6 +31,8 @@ export default function GroupDetail() {
   const { width } = useWindowDimensions();
   const [selected, setSelected] = useState<MemberInfo | null>(null);
   const [adding, setAdding] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
   const [view, setView] = useState<"members" | "events">(tab === "events" ? "events" : "members");
 
   const g = useQuery({ queryKey: ["group", id], queryFn: () => api<any>(`/groups/${id}`), refetchInterval: 12000 });
@@ -44,6 +51,15 @@ export default function GroupDetail() {
     },
     onError: (e) => { const u = unavailableOf(e); if (u) { setAdding(false); showUnavailable(u); } else toast((e as any).message, "error"); },
   });
+  const rename = useMutation({
+    mutationFn: (name: string) => api(`/groups/${id}`, { method: "PATCH", json: { name } }),
+    onSuccess: () => { setRenaming(false); refresh(); }, onError: (e: any) => toast(e.message, "error"),
+  });
+  const removeGroup = useMutation({
+    mutationFn: () => api(`/groups/${id}`, { method: "DELETE" }),
+    onSuccess: () => { toast("Grupo borrado", "success"); qc.invalidateQueries({ queryKey: ["groups"] }); router.replace("/map"); },
+    onError: (e: any) => toast(e.message, "error"),
+  });
   const act = useMutation({
     mutationFn: ({ path, method = "POST" }: { path: string; method?: string }) => api(path, { method }),
     onSuccess: () => { setSelected(null); refresh(); }, onError: (e: any) => toast(e.message, "error"),
@@ -55,9 +71,29 @@ export default function GroupDetail() {
 
   const group = g.data;
   const size = Math.min(width - spacing.xl * 2, 320);
+  const isOwner = group?.owner_id === user?.id;
   return (
     <View style={s.root} testID="group-detail">
-      <Header title={group?.name ?? "Grupo"} right={canManage ? <Pressable testID="group-add-member" onPress={() => setAdding(true)} style={s.iconBtn}><Ionicons name="person-add" size={18} color={colors.onSurface} /></Pressable> : undefined} />
+      <View style={[s.header, { paddingTop: insets.top + spacing.sm }]}>
+        <Pressable testID="header-back-button" onPress={() => (router.canGoBack() ? router.back() : router.replace("/map"))} style={s.iconBtn}><Ionicons name="chevron-back" size={22} color={colors.onSurface} /></Pressable>
+        {renaming ? (
+          <TextInput testID="group-rename-input" style={s.renameInput} value={nameDraft} onChangeText={setNameDraft} autoFocus returnKeyType="done" onSubmitEditing={() => nameDraft.trim() && rename.mutate(nameDraft.trim())} />
+        ) : (
+          <T weight="bold" style={{ fontSize: 20, flex: 1 }} numberOfLines={1}>{group?.name ?? "Grupo"}</T>
+        )}
+        {renaming ? (
+          <>
+            <Pressable testID="group-rename-save" onPress={() => nameDraft.trim() && rename.mutate(nameDraft.trim())} style={s.iconBtn}><Ionicons name="checkmark" size={20} color={colors.success} /></Pressable>
+            <Pressable testID="group-rename-cancel" onPress={() => setRenaming(false)} style={s.iconBtn}><Ionicons name="close" size={20} color={colors.muted} /></Pressable>
+          </>
+        ) : canManage ? (
+          <>
+            <Pressable testID="group-rename-button" onPress={() => { setNameDraft(group?.name ?? ""); setRenaming(true); }} style={s.iconBtn} accessibilityLabel="Cambiar nombre del grupo"><Ionicons name="pencil" size={18} color={colors.onSurface} /></Pressable>
+            {isOwner ? <Pressable testID="group-delete-button" onPress={() => confirmDelete("Borrar grupo", `Se eliminará "${group?.name}" y sus invitaciones.`, () => removeGroup.mutate())} style={s.iconBtn} accessibilityLabel="Borrar grupo"><Ionicons name="trash" size={18} color={colors.error} /></Pressable> : null}
+            <Pressable testID="group-add-member" onPress={() => setAdding(true)} style={s.iconBtn}><Ionicons name="person-add" size={18} color={colors.onSurface} /></Pressable>
+          </>
+        ) : null}
+      </View>
       <View style={s.tabs}>
         {(["members", "events"] as const).map((k) => (
           <Pressable key={k} testID={`group-tab-${k}`} onPress={() => setView(k)} style={[s.tab, view === k && s.tabOn]}><T weight="semibold" style={{ fontSize: 13, color: view === k ? colors.onBrandPrimary : colors.onSurface }}>{k === "members" ? "Miembros" : "Actividad"}</T></Pressable>
@@ -126,6 +162,8 @@ const LOC: Record<string, string> = { shared: "Ubicación", not_shared: "Sin ubi
 
 const useStyles = makeStyles((c) => ({
   root: { flex: 1, backgroundColor: c.surface },
+  header: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingHorizontal: spacing.lg, paddingBottom: spacing.md },
+  renameInput: { flex: 1, fontFamily: fonts.bold, fontSize: 18, color: c.onSurface, borderBottomWidth: 1, borderColor: c.brandPrimary, paddingVertical: 4 },
   iconBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: c.surfaceTertiary, alignItems: "center", justifyContent: "center" },
   tabs: { flexDirection: "row", gap: spacing.sm, paddingHorizontal: spacing.lg },
   tab: { height: 36, paddingHorizontal: 16, borderRadius: radius.pill, backgroundColor: c.surfaceTertiary, alignItems: "center", justifyContent: "center" },

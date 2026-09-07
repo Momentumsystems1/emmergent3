@@ -1,0 +1,37 @@
+{
+  "summary": "Tested the OrbitalField UI restoration (onboarding/group + group/[id]) and new rename/delete icons on the group detail screen, mobile viewport 390x844, using owner@sentinelfamily.app (fresh, no groups) and ana.demo@sentinelfamily.app ('Grupo 1' with pending/expired invitee Luis). No backend endpoints were modified per problem statement, so backend testing was limited to observing network calls triggered by the UI (no new pytest file created). CONFIRMED WORKING: group creation renders OrbitalField (nucleus=group name, orbiting avatars), avatar position visibly shifts over ~1.5s confirming continuous orbit animation; pending members render grey/dimmed with a clock badge, active members render vivid with their color; tapping a pending orbiting member (Luis) opens MemberSheet showing correct invitation state and 'Quitar del grupo' (no resend/cancel since his invite is expired - correct business logic, not a bug); adding a new member via 'Añadir a mano' renders it with isNew birth animation, no crashes/console errors; group DELETE from the detail screen (trash icon, owner-only, confirm dialog) successfully deletes and redirects to /map with a 'Grupo borrado' toast; group RENAME on the detail screen (pencil -> TextInput -> checkmark) correctly calls PATCH and persists across reload (verified twice, forward and reverted back to restore Ana's fixture). Map regression check passed: fab-privacy, fab-sos, GroupsRail, UserCard, 'Crea tu grupo' CTA all render correctly for an empty-group account. CRITICAL BUG FOUND: inline group rename inside /onboarding/group (app/onboarding/group.tsx GroupCard's `group-name-{id}` TextInput) does NOT persist. Neither blurring (click away) nor pressing Enter triggers a PATCH /api/groups/{id} network call - confirmed via network log interception (zero PATCH requests fired in either case) and via page reload showing the original name unchanged, tested 3 times with different values/interaction methods.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "app/onboarding/group.tsx GroupCard nameInput (testID group-name-{id})",
+        "issue": "Inline rename does not persist. The TextInput only wires onEndEditing to call the rename mutation, but onEndEditing is unreliable on react-native-web - it does not reliably fire on blur, and there is no onSubmitEditing/ref.blur() fallback wired for Enter/submit either. Verified with 3 separate test runs (blur via click-away, blur via Tab, Enter key) - all resulted in ZERO PATCH /api/groups/{id} network requests, and the name reverts to the original on page reload. Contrast: the equivalent rename button on the group DETAIL screen (group/[id].tsx, explicit pencil->edit->checkmark-save flow) works correctly and persists (verified with PATCH 200 + reload).",
+        "testID": "group-name-{id}",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Fix onboarding/group.tsx: the group-name-{id} TextInput needs either (a) an onSubmitEditing handler that calls inputRef.current?.blur() then the same rename logic (react-native-web does not guarantee onEndEditing fires on blur alone), or (b) switch to an explicit save affordance like the group detail screen already does correctly (pencil/checkmark pattern), which is proven to work. Recommend reusing the same rename UX pattern from group/[id].tsx for consistency.",
+    "After the fix, retest: type a new name in a group card on /onboarding/group, blur AND press Enter, then reload the page and confirm the new name persists via GET /api/groups."
+  ],
+  "critical_code_review_comments": [
+    "OrbitalField.tsx and orbs.tsx are clean, well-commented, and correctly use react-native-reanimated shared values/useFrameCallback for the continuous orbit, spring physics for target-angle changes, and a birth sequence for isNew members - no issues found here.",
+    "group/[id].tsx's rename flow (renaming state + nameDraft + explicit checkmark/X buttons) is a more robust pattern than onboarding/group.tsx's implicit onEndEditing-only approach; both PATCH the same backend endpoint, so this is purely a frontend interaction-wiring bug, not a backend issue.",
+    "routers/groups.py PATCH/DELETE endpoints (lines 127-143) are unchanged and correctly scoped: PATCH requires admin/owner role, DELETE requires owner and cascades member/invitation state - both verified end-to-end from the detail screen in this session."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "not modified/not applicable this iteration", "frontend": "~90% - all reviewed OrbitalField/detail-screen flows pass except onboarding/group inline rename"},
+  "seed_data_creation": "Ephemeral only: TEST_Familia and TEST_Birth groups created and deleted under owner@sentinelfamily.app during testing (both cleaned up, owner account ends with 0 groups as it started). ana.demo@sentinelfamily.app's 'Grupo 1' was temporarily renamed twice during testing and reverted back to 'Grupo 1' at the end - Luis (pending/expired invitee) was untouched.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "OrbitalField restoration is otherwise solid: orbit animation, pending/active visual states, member-tap-to-MemberSheet, birth animation for new members, and the NEW detail-screen rename/delete icons all work end-to-end and persist correctly. The ONLY confirmed regression is the onboarding/group.tsx inline TextInput rename never firing a PATCH call (root cause: relying solely on onEndEditing, which react-native-web does not reliably trigger on blur, and no onSubmitEditing fallback). Once fixed, only that specific flow needs a retest - everything else in this review passed.",
+  "rca_of_issue": "app/onboarding/group.tsx line 117: `<TextInput ... onEndEditing={() => {...rename...}} returnKeyType=\"done\" />` has no `onSubmitEditing` prop and no ref-based manual blur(). On react-native-web, onEndEditing is documented/known to be unreliable for detecting text-input completion outside of native iOS/Android - it depends on an actual DOM blur event propagating in a way RNW's TextInput implementation surfaces as onEndEditing, which did not occur in any of 3 tested interaction methods (click-away blur, Tab-key blur, Enter/submit). Fix: add onSubmitEditing that manually calls a ref's .blur(), or replicate the explicit pencil/checkmark save button pattern already proven to work in group/[id].tsx."
+}

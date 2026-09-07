@@ -90,7 +90,7 @@ export async function api<T = any>(path: string, init: RequestInit & { json?: an
   const headers: Record<string, string> = { ...(rest.headers as any), "Content-Type": "application/json" };
   const doFetch = async () => {
     if (auth && access) headers.Authorization = `Bearer ${access}`;
-    return fetch(`${BASE}${path}`, { ...rest, headers, body: json !== undefined ? JSON.stringify(json) : rest.body });
+    return fetch(`${BASE}${path}`, { ...rest, headers, cache: "no-store", body: json !== undefined ? JSON.stringify(json) : rest.body });
   };
   let r: Response;
   try {

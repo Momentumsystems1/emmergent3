@@ -1,0 +1,25 @@
+{
+  "summary": "Targeted re-test of the single HIGH bug from iteration_7 (onboarding/group.tsx inline rename not persisting). Tested on mobile viewport 390x844 using owner@sentinelfamily.app against 'Familia Final Test' group. All 3 interaction paths verified with network log interception + hard page reload: (1) tap pencil -> edit name -> press Enter (onSubmitEditing) -> confirmed PATCH /api/groups/{id} fired, name persisted after full reload; (2) tap pencil -> edit name -> tap checkmark (group-rename-save-{id}) -> confirmed PATCH fired, name persisted after full reload; (3) tap pencil -> edit name -> tap X (group-rename-cancel-{id}) -> confirmed ZERO API calls fired, UI immediately reverted to the pre-edit name, and reload confirmed the discarded value was never persisted. BUG IS FIXED. Also verified the api.ts `cache: 'no-store'` change caused no regressions: navigated to /map twice (fresh load + hard reload) as owner@sentinelfamily.app - groups-rail (group-bubble), top-bar (bar-name/bar-prompt showing correct group name 'Familia Final Test' after rename), user-card, fab-privacy/fab-sos all rendered identically and correctly both times, confirming GET /api/groups and other reads are not stale-cached and reload consistently reflects latest server state. Restored the group name back to 'Familia Final Test' at the end of testing to keep the fixture clean for future test runs.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "onboarding/group.tsx GroupCard rename flow (lines 119-124) now mirrors the proven pencil->TextInput(autoFocus)->checkmark/X pattern from group/[id].tsx: explicit onSubmitEditing AND explicit save button both call the same saveRename() which trims/compares before firing the mutation, and cancel just resets `renaming` state to false without touching nameDraft's already-typed value on next re-open (setNameDraft(g.name) is correctly re-applied on next pencil tap at line 129) - no lingering stale-draft bug found.",
+    "api.ts cache:'no-store' addition (line 93) is correctly scoped to only the shared api() fetch wrapper used for all authenticated/JSON calls - the raw fetch in doRefresh() (line 75-78) for the token refresh endpoint does not have it, which is fine since that's a POST with no caching concern anyway. One-line low-risk change confirmed safe."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "not applicable - frontend only per request", "frontend": "100% - all 3 rename interaction paths + cache regression check passed"},
+  "seed_data_creation": "None persisted. Temporarily renamed owner@sentinelfamily.app's 'Familia Final Test' group to 'TEST_Renamed_Group_QA', then 'TEST_Checkmark_Save', then attempted (and correctly discarded via cancel) 'TEST_ShouldNotPersist', and finally restored to 'Familia Final Test' at the end. ana.demo@sentinelfamily.app's 'Grupo 1' / Luis invitee was not touched (not needed for this targeted retest).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "The iteration_7 HIGH bug (onboarding/group.tsx inline rename not persisting) is CONFIRMED FIXED. All three UX paths (Enter key, checkmark tap, X cancel) work correctly and persist/discard as expected across a hard page reload. The api.ts cache:'no-store' change was verified safe with no regressions on /map (groups-rail, top-bar group name, user-card, fabs). No further action needed on this specific issue; note a pre-existing, unrelated cosmetic detail: on cold app load there are always a couple of transient 'Failed to load resource: 401' console errors before the token-refresh single-flight logic kicks in and resolves - this occurred consistently before and after the api.ts change, is not a regression, and did not affect any tested functionality (page always ends up in the correct authenticated state)."
+}

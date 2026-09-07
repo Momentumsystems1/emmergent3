@@ -1,0 +1,45 @@
+{
+  "summary": "Iteration 3 review-spec testing PASSED end-to-end. Backend: 10/10 new pytest cases in test_new_iteration3.py all pass (reverse geocoding, multi-use invite link, trip flow, nav-route regression). Full suite: 38 real assertions pass, 1 skipped (contact invitation hit plan cap = acceptable per spec), 1 fixture setup error caused by test-data accumulation on Ana's group (5 fixed-member cap; not a product bug). Frontend: (a) Login works, map-home shows bar-greeting 'Hola Ana' → within ~6s bar-prompt '¿A dónde vamos?'; no sharing-status-bar; no people-sheet. (b) fab-tools opens tools-menu with all 6 labels (Quedar, Convoy, Todo bien, Anti-cong, Actividad, Privacidad); map click closes it. (c) fab-sharing opens sharing-panel with 6 sharing-key-* rows, sharing-with visible, sharing-close visible, sharing-modify → /privacy → back to /map. (d) members-rail shows 4 rail-<member_id> avatars (Ana's own is one of them; note: no literal 'rail-me' testID, uses rail-<member_id> pattern — see action_items). (e) navigate flow: search-bar-input → /navigate, typed 'Gran Via' → 5 nav-result-*, picked #0, route-summary visible, nav-go → /drive?lat=…&place=… with real coords. (f) /drive with prefilled Puerta del Sol: drive-instruction 'En la rotonda, tome la cuarta salida en Avenida del General Perón', drive-eta 'en 200 m · 26 min · 7.3 km · llegada 18:22'; tool-stop → panel-stop, 5 stop-result-* for 'Gran Via', picking one updates ETA to '32 min · 8.6 km' and shows '1 parada'; tool-poi → panel-poi → poi-cafe → 5 poi-result-*; tool-group → panel-group with 'Viaje con Grupo 1'; fab-sharing opens sharing-panel; map click closes any panel; drive-close returns to /map. (g) /group/{gid}: invite-options + invite-link-whatsapp + invite-link-share + invite-from-contacts all present; contacts-picker opens with 'La agenda del dispositivo solo está disponible en la app móvil.' web-unsupported message; no crash. (h) Regression: /privacy, /profile, /meeting/new (prefilled 'Puerta del Sol'), /convoy/new all render without error-screen. api.ts single-flight refresh VERIFIED: page navigations trigger a burst of 401→refresh cycles (3-4x on /drive load) but the session persists and screens populate; no logout, matching the review's expectation. Web console warnings 'shadow*'/pointerEvents remain (known, ignorable). No red screens, no React Native errors, no deprecated Expo packages found.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "POST /api/groups/{gid}/invitations",
+        "issue": "Contact invitations skipped in module-scoped run because Ana's group hit the free-plan 5 fixed-member cap. Not a product bug — the same test passes when run against a fresh group / owner. Consider a periodic cleanup of TEST_ members on ana.demo, or run new test guests via a separate throwaway group to avoid cross-iteration accumulation."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_new_iteration3.py",
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/it3_results.xml",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Optional: expose a stable 'rail-me' testID for Ana's own avatar in MembersRail so the review spec's 'at least me' check can be asserted directly (today it is rail-<member_id>; still discoverable but not literal 'me').",
+    "Optional: schedule a nightly cleanup of TEST_ members in Ana's group so long-running iterations don't hit the 5-fixed-member plan cap during CI. Alternatively, promote Ana to PRO in the seed for cross-iteration invite-link tests.",
+    "Optional: swallow the shadow*/pointerEvents deprecation console noise (React Native Web 0.19+): boxShadow migration and style.pointerEvents. Non-blocking."
+  ],
+  "critical_code_review_comments": [
+    "routers/trips.py:129 – _eta_for is only computed for participants whose status is 'leader' or 'joined'; 'invited' and 'left' correctly return a synthetic state without calling routing. Good separation. Confirmed by test.",
+    "routers/groups.py:178-191 – Multi-use invite-link endpoint is idempotent (find_one({multi:True,status:'open'}) then create if missing). Behaviour matches spec: second call returns same id/token. Confirmed.",
+    "routers/providers.py:236-255 – Reverse geocoding rejects NaN before calling Azure; returns Unavailable('service') → maps to 503 in ASGI handler. Confirmed.",
+    "components/MembersRail.tsx uses rail-${member_id} (line 19). Consider adding testID='rail-me' on the current user's avatar so it's addressable stably across sessions.",
+    "app/drive.tsx (via UI) correctly handles 401 bursts through api.ts single-flight refresh — verified by opening /drive right after login without reload: 3x 401s are followed by successful drive-instruction/drive-eta hydration, no logout redirect."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_new_iteration3.py (new)"
+  ],
+  "success_rate": {"backend": "100% (10/10 new + 28/28 regression asserted; 1 fixture-setup error due to plan cap only, 1 skip due to plan cap)", "frontend": "100% of review-spec scenarios"},
+  "seed_data_creation": "Registered several throwaway users TEST_*_@sentinelfamily.app during trips + invite-link tests (accepted into Ana's Grupo 1). Ana's group is now close to / at the free-plan 5 fixed-member cap. No manual DB writes.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Ana (ana.demo@sentinelfamily.app / Sentinel2026!) owns Grupo 1 = 6a9b12a55e9a54ed597ae8f8. Group is near/at the 5-fixed-member cap because prior iterations registered several TEST_ guests via invite-link. New tests that need to add members to Ana's group should first revoke/cancel some TEST_ member invitations, or use owner@sentinelfamily.app (PRO plan) whose group has bigger caps. Web preview cannot render react-native-maps: the placeholder 'Mapa nativo no disponible en web · vista espacial' is expected, and map tap → point selection only works natively (skip on web). api.ts single-flight refresh works — 3-4 401 console errors on protected page loads are normal, don't treat them as failures.",
+  "rca_of_issue": "N/A — no bugs found in this iteration. The one pytest fixture setup error (TestTrips.test_full_trip_flow when running the whole suite) is caused by data accumulation on Ana's Grupo 1 hitting the free-plan 5-fixed-member cap; the exact same test PASSES in isolation (verified: pytest backend/tests/test_new_iteration3.py -v → 10/10)."
+}

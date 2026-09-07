@@ -19,6 +19,8 @@ export type MapCanvasProps = {
   /** Tap on the map (coordinate is undefined on web, where there is no real map). */
   onMapPress?: (c?: LatLng) => void;
   onMapLongPress?: (c: LatLng) => void;
+  /** User dragged the map (native only) → callers typically stop following. */
+  onUserPan?: () => void;
   selected?: LatLng | null;
 };
 
@@ -38,7 +40,7 @@ const LIGHT_STYLE = [
   { featureType: "poi", stylers: [{ visibility: "off" }] },
 ];
 
-export function MapCanvas({ people, pins = [], polyline, onPersonPress, center, zoomDelta = 0.01, onMapPress, onMapLongPress, selected }: MapCanvasProps) {
+export function MapCanvas({ people, pins = [], polyline, onPersonPress, center, zoomDelta = 0.01, onMapPress, onMapLongPress, onUserPan, selected }: MapCanvasProps) {
   const { scheme, colors } = useTheme();
   const ref = useRef<MapView>(null);
   const located = people.filter((p) => p.state === "shared" && p.lat != null);
@@ -55,7 +57,7 @@ export function MapCanvas({ people, pins = [], polyline, onPersonPress, center, 
         initialRegion={{ latitude: c.lat, longitude: c.lng, latitudeDelta: center ? zoomDelta : 0.06, longitudeDelta: center ? zoomDelta : 0.06 }}
         showsCompass={false} toolbarEnabled={false} showsMyLocationButton={false}
         onPress={(e) => { if ((e.nativeEvent as any).action === "marker-press") return; onMapPress?.(coord(e)); }}
-        onLongPress={(e) => onMapLongPress?.(coord(e))}>
+        onLongPress={(e) => onMapLongPress?.(coord(e))} onPanDrag={onUserPan ? () => onUserPan() : undefined}>
         {located.map((p) => (
           <Marker key={p.member_id} coordinate={{ latitude: p.lat!, longitude: p.lng! }} onPress={() => onPersonPress?.(p)} anchor={{ x: 0.4, y: 0.6 }} testID={`map-person-${p.member_id}`}>
             <PersonAvatar name={p.name} color={p.color} state="shared" size={p.is_me ? 50 : 42} />

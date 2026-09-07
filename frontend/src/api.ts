@@ -60,7 +60,16 @@ async function parse(r: Response) {
   }
 }
 
-async function refresh(): Promise<boolean> {
+let refreshing: Promise<boolean> | null = null;
+
+/** Single-flight refresh: parallel 401s share one rotation (the refresh token rotates; a second concurrent call
+ * with the old token would revoke the session). */
+function refresh(): Promise<boolean> {
+  if (!refreshing) refreshing = doRefresh().finally(() => { refreshing = null; });
+  return refreshing;
+}
+
+async function doRefresh(): Promise<boolean> {
   const t = await loadTokens();
   if (!t) return false;
   const r = await fetch(`${BASE}/auth/refresh`, {
@@ -68,7 +77,7 @@ async function refresh(): Promise<boolean> {
     body: JSON.stringify({ refresh_token: t.refresh_token }),
   });
   if (!r.ok) {
-    await saveTokens(null);
+    if (r.status === 401) await saveTokens(null);
     return false;
   }
   const next = await r.json();

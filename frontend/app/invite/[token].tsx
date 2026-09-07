@@ -39,7 +39,7 @@ export default function Invite() {
   };
 
   const d = inv.data;
-  const open = d && (d.status === "prepared" || d.status === "dispatched");
+  const open = d && (d.status === "prepared" || d.status === "dispatched" || d.status === "open");
   return (
     <View style={[s.root, { paddingTop: insets.top + spacing.xxxl, paddingBottom: insets.bottom + spacing.xl }]} testID="invite-screen">
       <Glass>
@@ -49,8 +49,8 @@ export default function Invite() {
         {d ? (
           <>
             <T weight="bold" style={{ fontSize: 22, marginTop: 6 }} testID="invite-group-name">Grupo {d.group_name}</T>
-            <T style={{ color: colors.muted, marginTop: 4 }}>Hola {d.name}, te han invitado como {d.membership === "temporary" ? "invitado temporal" : "miembro fijo"}.{d.expires_at ? ` La invitación expira el ${new Date(d.expires_at).toLocaleString("es-ES")}.` : ""}</T>
-            <View style={{ marginTop: spacing.md }}><Pill testID="invite-status" label={{ prepared: "Pendiente", dispatched: "Pendiente", accepted: "Ya aceptada", declined: "Rechazada", expired: "Expirada", cancelled: "Cancelada" }[d.status as string] ?? d.status} tone={open ? "amber" : "muted"} /></View>
+            <T style={{ color: colors.muted, marginTop: 4 }}>{d.multi ? `Enlace de grupo: al aceptar entrarás como miembro fijo de ${d.group_name}.` : `Hola ${d.name}, te han invitado como ${d.membership === "temporary" ? "invitado temporal" : "miembro fijo"}.`}{d.expires_at ? ` La invitación expira el ${new Date(d.expires_at).toLocaleString("es-ES")}.` : ""}</T>
+            <View style={{ marginTop: spacing.md }}><Pill testID="invite-status" label={{ prepared: "Pendiente", dispatched: "Pendiente", open: "Enlace activo", accepted: "Ya aceptada", declined: "Rechazada", expired: "Expirada", cancelled: "Cancelada" }[d.status as string] ?? d.status} tone={open ? "amber" : "muted"} /></View>
             <T style={{ color: colors.muted, fontSize: 12, marginTop: spacing.md }}>Al aceptar decides tú qué compartes. Nadie verá tu ubicación hasta que la actives y concedas el permiso del dispositivo.</T>
             <View style={{ gap: spacing.sm, marginTop: spacing.lg }}>
               {open && !loading && user ? <Button testID="invite-accept" title="Aceptar y unirme" onPress={() => respond.mutate(true)} loading={respond.isPending} /> : null}

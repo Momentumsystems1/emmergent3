@@ -4,7 +4,7 @@ import { Linking, Platform } from "react-native";
 
 import { api } from "@/src/api";
 
-export type Invitation = { id: string; name: string; channel: "whatsapp" | "sms"; status: string; link: string; group_name: string; membership: string; created_at?: string; dispatched_at?: string | null };
+export type Invitation = { id: string; name: string; channel: "whatsapp" | "sms" | "link"; status: string; phone?: string | null; multi?: boolean; link: string; group_name: string; membership: string; created_at?: string; dispatched_at?: string | null };
 
 export function inviteText(inv: Invitation) {
   return `Hola ${inv.name}, te invito a mi grupo "${inv.group_name}" en Sentinel Family. Abre este enlace para aceptar: ${inv.link}`;

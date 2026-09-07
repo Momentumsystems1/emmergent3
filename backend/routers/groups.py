@@ -32,6 +32,7 @@ class InviteCreate(BaseModel):
     duration_hours: Optional[int] = None
     responsible_adult_required: bool = False
     permissions: list[str] = []
+    phone: Optional[str] = None  # from the device contacts picker → wa.me/<phone>
 
 
 async def _group_for(user: dict, group_id: str, admin: bool = False) -> dict:
@@ -160,7 +161,7 @@ async def invite(group_id: str, body: InviteCreate, user=Depends(current_user)):
     inv = {"group_id": group_id, "group_name": g["name"], "name": body.name.strip(), "membership": body.membership,
            "channel": body.channel, "token": token, "status": "prepared", "invited_by": str(user["_id"]),
            "created_at": now(), "dispatched_at": None, "expires_at": expires,
-           "responsible_adult_required": body.responsible_adult_required, "permissions": body.permissions,
+           "responsible_adult_required": body.responsible_adult_required, "permissions": body.permissions, "phone": body.phone,
            "link": f"{APP_PUBLIC_URL}/invite/{token}"}
     ires = await db.invitations.insert_one(inv)
     used = await db.members.count_documents({"group_id": group_id})
@@ -172,6 +173,29 @@ async def invite(group_id: str, body: InviteCreate, user=Depends(current_user)):
     inv["_id"] = ires.inserted_id
     member["_id"] = mres.inserted_id
     return {"invitation": serialize(inv), "member": serialize(member)}
+
+
+@router.post("/groups/{group_id}/invite-link")
+async def group_invite_link(group_id: str, user=Depends(current_user)):
+    """Multi-use group link (share it in a WhatsApp/WeChat chat or group; everyone who taps it joins as a fixed member,
+    plan cap checked at acceptance). One open link per group; re-calling returns the same link."""
+    g = await _group_for(user, group_id, admin=True)
+    inv = await db.invitations.find_one({"group_id": group_id, "multi": True, "status": "open"})
+    if not inv:
+        token = secrets.token_urlsafe(24)
+        inv = {"group_id": group_id, "group_name": g["name"], "name": "", "membership": "fixed", "channel": "link", "token": token,
+               "status": "open", "multi": True, "invited_by": str(user["_id"]), "created_at": now(), "dispatched_at": None,
+               "expires_at": None, "uses": [], "link": f"{APP_PUBLIC_URL}/invite/{token}"}
+        res = await db.invitations.insert_one(inv)
+        inv["_id"] = res.inserted_id
+    return serialize(inv)
+
+
+@router.post("/groups/{group_id}/invite-link/revoke")
+async def revoke_invite_link(group_id: str, user=Depends(current_user)):
+    await _group_for(user, group_id, admin=True)
+    await db.invitations.update_many({"group_id": group_id, "multi": True, "status": "open"}, {"$set": {"status": "cancelled", "cancelled_at": now()}})
+    return {"ok": True}
 
 
 @router.post("/invitations/{inv_id}/dispatched")
@@ -233,9 +257,30 @@ async def respond_invitation(token: str, body: Respond, user=Depends(current_use
     inv = await db.invitations.find_one({"token": token})
     if not inv:
         raise HTTPException(404, "Invitación no encontrada")
+    uid = str(user["_id"])
+    if inv.get("multi"):
+        if inv["status"] != "open":
+            raise HTTPException(409, "Este enlace de grupo ya no está activo")
+        if not body.accept:
+            return {"status": "declined"}
+        existing = await db.members.find_one({"group_id": inv["group_id"], "user_id": uid, "status": "active"})
+        if existing:
+            return {"status": "accepted", "group_id": inv["group_id"], "already_member": True}
+        inviter = await db.users.find_one({"_id": oid(inv["invited_by"])})
+        ent = (await user_entitlements(inviter or user))["entitlements"]
+        count = await db.members.count_documents({"group_id": inv["group_id"], "membership": "fixed", "status": {"$in": ["pending", "active"]}})
+        if count >= ent["maxPermanentMembers"]:
+            raise Unavailable("plan", f"El grupo ha alcanzado los {ent['maxPermanentMembers']} miembros fijos de su plan.", "maxPermanentMembers")
+        prof = user.get("profile") or {}
+        used = await db.members.count_documents({"group_id": inv["group_id"]})
+        await db.members.insert_one({"group_id": inv["group_id"], "user_id": uid, "display_name": prof.get("name") or user.get("email", "Miembro"),
+                                     "role": "adult_member", "membership": "fixed", "status": "active",
+                                     "color": user.get("avatar", {}).get("color") or PALETTE[used % len(PALETTE)], "joined_at": now(),
+                                     "invitation_id": str(inv["_id"]), "expires_at": None})
+        await db.invitations.update_one({"_id": inv["_id"]}, {"$push": {"uses": {"user_id": uid, "at": now()}}})
+        return {"status": "accepted", "group_id": inv["group_id"]}
     if inv["status"] in ("accepted", "cancelled", "expired", "declined"):
         raise HTTPException(409, f"La invitación ya está en estado {inv['status']}")
-    uid = str(user["_id"])
     if not body.accept:
         await db.invitations.update_one({"_id": inv["_id"]}, {"$set": {"status": "declined", "responded_at": now()}})
         await db.members.update_one({"invitation_id": str(inv["_id"])}, {"$set": {"status": "declined"}})

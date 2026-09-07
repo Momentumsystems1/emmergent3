@@ -101,3 +101,16 @@
 #====================================================================================================
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
+## Iteration 3 (2026-06) — Map redesign + Drive + group invitations
+backend:
+  - task: "GET /api/mobility/reverse (Azure reverse geocoding)"  # implemented, curl-verified
+  - task: "POST /api/groups/{id}/invite-link (multi-use) + accept via POST /api/invitations/by-token/{token}/respond (creates active member, plan cap)"
+  - task: "POST /api/groups/{id}/invitations now accepts optional phone"
+  - task: "Trips: POST /api/trips, POST /trips/{id}/invite, /join, /leave, PATCH stops, /close, GET /trips/pending, GET /trips/{id} (participants + real ETA)"
+frontend:
+  - task: "map.tsx: compact pill (greeting→'¿A dónde vamos?'), left MembersRail (tap centers), SharingFab+SharingPanel, tools FAB menu, tap point → reverse + Ir/Quedar/Convoy, trip-invite banner (Unirme)"
+  - task: "drive.tsx: active navigation (route, next step, ETA, stops via search/POI/long-press, group panel → trip invite, sharing panel, follow FAB)"
+  - task: "navigate.tsx: 'Ir' button → /drive"
+  - task: "InviteOptions (group link via WhatsApp / share sheet; contacts picker native-only) on onboarding/group and group/[id]"
+  - task: "api.ts single-flight refresh (fixes logout race on reload)"
+credentials: see /app/memory/test_credentials.md (ana.demo@sentinelfamily.app / Sentinel2026!)

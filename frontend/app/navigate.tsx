@@ -108,6 +108,9 @@ export default function Navigate() {
               <View style={s.card} testID="route-summary">
                 <T weight="bold" numberOfLines={1}>🏁 {dest!.name}</T>
                 {route.isLoading ? <T style={{ color: colors.muted }}>Calculando ruta…</T> : route.data ? <T style={{ color: colors.muted, fontSize: 13 }}>{fmt(route.data.duration_s)} · {km(route.data.distance_m)} · retraso tráfico {fmt(route.data.delay_s)} · llegada {route.data.arrival ? new Date(route.data.arrival).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }) : "—"}</T> : <T style={{ color: colors.error, fontSize: 13 }}>{origin ? "Ruta no disponible para este modo" : "Falta tu ubicación de origen"}</T>}
+                <View style={{ marginTop: spacing.sm }}>
+                  <Button testID="nav-go" title="Ir" icon="navigate" onPress={() => router.push({ pathname: "/drive", params: { lat: String(dest!.lat), lng: String(dest!.lng), place: dest!.name, mode, stops: JSON.stringify(stops.map((st) => ({ name: st.label, lat: st.lat, lng: st.lng }))), ...(origin ? { fromLat: String(origin.lat), fromLng: String(origin.lng) } : {}) } })} />
+                </View>
               </View>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }} style={{ height: 44, flexGrow: 0 }}>
                 {MODES.map(([k, l, ic]) => <Pressable key={k} testID={`mode-${k}`} onPress={() => setMode(k)} style={[s.chip, mode === k && s.chipOn]}><Ionicons name={ic as any} size={14} color={mode === k ? colors.onBrandPrimary : colors.onSurface} /><T weight="semibold" style={{ fontSize: 13, color: mode === k ? colors.onBrandPrimary : colors.onSurface }}>{l}</T></Pressable>)}

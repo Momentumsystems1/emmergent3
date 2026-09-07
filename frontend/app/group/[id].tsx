@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api, unavailableOf } from "@/src/api";
 import { useAuth } from "@/src/auth";
+import { InviteOptions } from "@/src/components/InviteOptions";
 import { OrbitalField } from "@/src/components/OrbitalField";
 import { AddMemberSheet, MemberInfo, MemberSheet } from "@/src/components/sheets";
 import { Button, Header, Pill, showUnavailable, T, toast } from "@/src/components/ui";
@@ -82,6 +83,7 @@ export default function GroupDetail() {
                   {m.status === "active" ? <Pill label={LOC[m.location_state] ?? ""} tone={m.location_state === "shared" ? "green" : "muted"} /> : null}
                 </Pressable>
               ))}
+              {canManage ? (<><T weight="bold" style={{ marginTop: spacing.lg }}>Invitar</T><InviteOptions groupId={id!} groupName={group.name} onChanged={() => qc.invalidateQueries({ queryKey: ["group", id] })} /></>) : null}
               <T weight="bold" style={{ marginTop: spacing.lg }}>Coordinación</T>
               <View style={{ flexDirection: "row", gap: spacing.sm }}>
                 <Button small testID="group-new-meeting" title="Quedar" icon="calendar" variant="secondary" onPress={() => router.push({ pathname: "/meeting/new", params: { group: id } })} />

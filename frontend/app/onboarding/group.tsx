@@ -10,6 +10,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api, unavailableOf } from "@/src/api";
 import { useAuth } from "@/src/auth";
+import { InviteOptions } from "@/src/components/InviteOptions";
 import { OrbitalField, OrbitalMember } from "@/src/components/OrbitalField";
 import { AddMemberSheet, MemberInfo, MemberSheet, NewInvite } from "@/src/components/sheets";
 import { Button, showUnavailable, T, toast } from "@/src/components/ui";
@@ -127,7 +128,8 @@ export default function GroupCreation() {
 
       {phase === "editing" ? (
         <View style={[s.actions, { paddingBottom: insets.bottom + spacing.lg }]}>
-          <Button testID="add-member-button" title="Añadir persona" icon="person-add" onPress={() => setAdding(true)} />
+          <InviteOptions groupId={group.id} groupName={name ?? group.name} onChanged={() => qc.invalidateQueries({ queryKey: ["groups"] })} />
+          <Button testID="add-member-button" title="Añadir persona a mano" icon="person-add" variant="secondary" onPress={() => setAdding(true)} />
           <Button testID="group-continue-button" title={members.length > 1 ? "Continuar sin enviar ahora" : "Continuar sin invitar"} variant="ghost" onPress={finish} />
         </View>
       ) : null}

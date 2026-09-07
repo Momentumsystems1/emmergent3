@@ -36,6 +36,12 @@ Ver /app/memory/test_credentials.md.
   Sin barra de estado "Compartiendo", sin hoja inferior "Grupo". Usuario centrado con zoom navegador (delta 0.01), FAB recentrar,
   FAB herramientas (Quedar/Convoy/¿Todo bien?/Anti-congestión/Actividad/Privacidad) que se cierra al tocar el mapa.
   Toque/long-press en el mapa → `GET /mobility/reverse` (Azure) → tarjeta compacta con Ir / Quedar aquí / Convoy.
+- Sesión 4b: carril izquierdo de avatares (centra el mapa), FAB permanente "Qué comparto y con quién" (SharingFab/Panel → /privacy),
+  pantalla `/drive` (navegación activa: ruta, siguiente maniobra, ETA, paradas por búsqueda/POI/long-press, viaje compartido con ETAs reales,
+  recálculo al salirse >120 m), botón "Ir" en navigate. Backend `routers/trips.py` (trips, invite, join, pending, close).
+  Invitaciones: enlace multiuso de grupo (`POST /groups/{id}/invite-link`, WhatsApp/share sheet) + selector de contactos (expo-contacts, solo nativo)
+  con envío secuencial por wa.me/<tel>. WhatsApp/WeChat NO exponen contactos ni miembros de grupo (documentado al usuario).
+  Fix: refresh de token single-flight en api.ts (evitaba cierre de sesión al recargar con varias peticiones 401 en paralelo).
 - Pendiente fase 2: movilidad grupal (gestor).
 
 ## Backlog priorizado

@@ -65,7 +65,7 @@ export default function MapHome() {
     ? served
     : [...served.filter((p) => !p.is_me), { member_id: "me-local", user_id: user?.id ?? "me", name: name || "Tú", color: colors.brandPrimary, state: "shared", lat: mePos.lat, lng: mePos.lng, is_me: true }];
   // First fix → center once with navigator zoom; afterwards only the recenter FAB moves the camera.
-  useEffect(() => { if (mePos && !focus) setFocus({ ...mePos, key: 1 }); }, [mePos, focus]);
+  useEffect(() => { if (mePos && !focus) setFocus({ lat: mePos.lat, lng: mePos.lng, key: 1 }); }, [mePos?.lat, mePos?.lng, focus]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const closeAll = () => { setMenu(false); setSel(null); };
   const onMapPress = (c?: LatLng) => { if (menu || sel || (locBanner && loc.perm !== "granted")) { closeAll(); setLocBanner(false); return; } if (c) setSel(c); };
@@ -94,7 +94,7 @@ export default function MapHome() {
               <Animated.View key="ask" entering={FadeIn} style={{ flex: 1 }}><T weight="semibold" style={s.barTxt} numberOfLines={1} testID="bar-prompt">¿A dónde vamos?</T></Animated.View>
             )}
           </Pressable>
-          <Pressable testID="search-bar-group" onPress={() => { closeAll(); group ? router.push(`/group/${group.id}`) : router.push("/onboarding/group"); }} style={s.barIcon} accessibilityLabel="Grupo">
+          <Pressable testID="search-bar-group" onPress={() => { closeAll(); router.push(group ? `/group/${group.id}` : "/onboarding/group"); }} style={s.barIcon} accessibilityLabel="Grupo">
             <Ionicons name="people" size={18} color={colors.onSurface} />
             {pendingCount ? <View style={s.badge}><T weight="bold" style={{ fontSize: 9, color: colors.onPending }}>{pendingCount}</T></View> : null}
           </Pressable>
@@ -120,11 +120,11 @@ export default function MapHome() {
       <View style={[s.fabs, { bottom: insets.bottom + spacing.lg }]} pointerEvents="box-none">
         {menu ? (
           <Animated.View entering={FadeInUp.duration(160)} exiting={FadeOut.duration(120)} style={s.menu} testID="tools-menu">
-            <MenuItem testID="qa-meeting" icon="calendar" label="Quedar" onPress={() => { setMenu(false); group ? router.push({ pathname: "/meeting/new", params: { group: group.id } }) : toast("Crea un grupo primero"); }} />
-            <MenuItem testID="qa-convoy" icon="car-sport" label="Convoy" onPress={() => { setMenu(false); group ? router.push({ pathname: "/convoy/new", params: { group: group.id } }) : toast("Crea un grupo primero"); }} />
+            <MenuItem testID="qa-meeting" icon="calendar" label="Quedar" onPress={() => { setMenu(false); if (group) router.push({ pathname: "/meeting/new", params: { group: group.id } }); else toast("Crea un grupo primero"); }} />
+            <MenuItem testID="qa-convoy" icon="car-sport" label="Convoy" onPress={() => { setMenu(false); if (group) router.push({ pathname: "/convoy/new", params: { group: group.id } }); else toast("Crea un grupo primero"); }} />
             <MenuItem testID="qa-checkin" icon="help-circle" label="¿Todo bien?" onPress={() => { setMenu(false); checkIn(); }} />
             <MenuItem testID="qa-anti" icon="trending-down" label="Anti-congestión" onPress={() => { setMenu(false); router.push({ pathname: "/navigate", params: { ...originParams, anti: "1" } }); }} />
-            <MenuItem testID="qa-activity" icon="list" label="Actividad" onPress={() => { setMenu(false); group ? router.push(`/group/${group.id}?tab=events`) : toast("Crea un grupo primero"); }} />
+            <MenuItem testID="qa-activity" icon="list" label="Actividad" onPress={() => { setMenu(false); if (group) router.push(`/group/${group.id}?tab=events`); else toast("Crea un grupo primero"); }} />
             <MenuItem testID="qa-privacy" icon="lock-closed" label="Privacidad" onPress={() => { setMenu(false); router.push("/privacy"); }} />
           </Animated.View>
         ) : null}

@@ -32,6 +32,10 @@ Ver /app/memory/test_credentials.md.
 - Especificación maestra PDF anulada por el usuario; criterio propio.
 - Orbe navegador ELIMINADO (`src/orb/` borrado). Árbol reducido a funciones reales.
 - Mapa estilo Life360 + módulo NAVIGATION (Azure: autocomplete, nav-route, along-route, history).
+- Sesión 4 (feedback usuario): home = mapa + píldora compacta ("Hola X" → "¿A dónde vamos?" a los 4 s; grupo y perfil dentro).
+  Sin barra de estado "Compartiendo", sin hoja inferior "Grupo". Usuario centrado con zoom navegador (delta 0.01), FAB recentrar,
+  FAB herramientas (Quedar/Convoy/¿Todo bien?/Anti-congestión/Actividad/Privacidad) que se cierra al tocar el mapa.
+  Toque/long-press en el mapa → `GET /mobility/reverse` (Azure) → tarjeta compacta con Ir / Quedar aquí / Convoy.
 - Pendiente fase 2: movilidad grupal (gestor).
 
 ## Backlog priorizado

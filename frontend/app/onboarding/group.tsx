@@ -27,7 +27,7 @@ export default function GroupOnboarding({ embedded }: { embedded?: boolean }) {
   const s = useStyles(); const { colors } = useTheme(); const insets = useSafeAreaInsets(); const { width } = useWindowDimensions();
   const [newName, setNewName] = useState("");
   const [adding, setAdding] = useState<Group | null>(null);
-  const [selected, setSelected] = useState<{ g: Group; m: MemberInfo } | null>(null);
+  const [selected, setSelected] = useState<{ gid: string; mid: string } | null>(null);
   const [finishing, setFinishing] = useState(false);
   const [formingId, setFormingId] = useState<string | null>(null);
   const [newMemberIds, setNewMemberIds] = useState<Record<string, string>>({});
@@ -54,7 +54,8 @@ export default function GroupOnboarding({ embedded }: { embedded?: boolean }) {
   const remove = useMutation({ mutationFn: (id: string) => api(`/groups/${id}`, { method: "DELETE" }), onSuccess: () => { toast("Grupo borrado", "success"); qc.invalidateQueries({ queryKey: ["groups"] }); }, onError: onErr });
   const invite = useMutation({ mutationFn: ({ g, v }: { g: Group; v: NewInvite }) => api(`/groups/${g.id}/invitations`, { method: "POST", json: v }), onSuccess: () => { setAdding(null); qc.invalidateQueries({ queryKey: ["groups"] }); }, onError: (e) => { setAdding(null); onErr(e); } });
   const act = useMutation({ mutationFn: (path: string) => api(path, { method: "POST" }), onSuccess: () => { setSelected(null); qc.invalidateQueries({ queryKey: ["groups"] }); }, onError: onErr });
-  const removeMember = useMutation({ mutationFn: ({ g, m }: { g: Group; m: MemberInfo }) => api(`/groups/${g.id}/members/${m.id}`, { method: "DELETE" }), onSuccess: () => { setSelected(null); qc.invalidateQueries({ queryKey: ["groups"] }); }, onError: onErr });
+  const removeMember = useMutation({ mutationFn: ({ gid, mid }: { gid: string; mid: string }) => api(`/groups/${gid}/members/${mid}`, { method: "DELETE" }), onSuccess: () => { setSelected(null); qc.invalidateQueries({ queryKey: ["groups"] }); }, onError: onErr });
+  const changeRole = useMutation({ mutationFn: ({ gid, mid, role }: { gid: string; mid: string; role: string }) => api(`/groups/${gid}/members/${mid}/role`, { method: "PATCH", json: { role } }), onSuccess: () => { toast("Permisos actualizados", "success"); qc.invalidateQueries({ queryKey: ["groups"] }); }, onError: onErr });
 
   const finish = async () => {
     const list = groups.data ?? [];
@@ -65,6 +66,8 @@ export default function GroupOnboarding({ embedded }: { embedded?: boolean }) {
   };
   const skip = async () => { await api("/profile/onboarding-step", { method: "PUT", json: { step: "done" } }); await reload(); router.replace("/map"); };
   const list = groups.data ?? [];
+  const selectedGroup = list.find((g) => g.id === selected?.gid) ?? null;
+  const selectedMember = selectedGroup?.members.find((m) => m.id === selected?.mid) ?? null;
 
   return (
     <View style={s.root} testID="onboarding-group">
@@ -72,7 +75,7 @@ export default function GroupOnboarding({ embedded }: { embedded?: boolean }) {
         {!embedded ? (<View><T weight="bold" style={{ fontSize: 28 }}>Tus grupos</T><T style={{ color: colors.muted, marginTop: 4 }}>Crea uno o varios círculos (familia, amigos, equipo). Cada grupo tiene sus propios miembros y permisos.</T></View>) : null}
 
         {list.map((g) => <GroupCard key={g.id} g={g} me={user?.id} width={width} phase={formingId === g.id ? "forming" : "editing"} newMemberIds={newMemberIds} onRename={(name) => rename.mutate({ id: g.id, name })} onDelete={() => confirm("Borrar grupo", `Se eliminará "${g.name}" y sus invitaciones.`, () => remove.mutate(g.id))}
-          onAdd={() => setAdding(g)} onMember={(m) => setSelected({ g, m })} onChanged={() => qc.invalidateQueries({ queryKey: ["groups"] })} />)}
+          onAdd={() => setAdding(g)} onMember={(m) => setSelected({ gid: g.id, mid: m.id })} onChanged={() => qc.invalidateQueries({ queryKey: ["groups"] })} />)}
 
         <View style={s.newCard} testID="new-group-card">
           <T weight="bold">{list.length ? "Crear otro grupo" : "Crea tu primer grupo"}</T>
@@ -90,10 +93,11 @@ export default function GroupOnboarding({ embedded }: { embedded?: boolean }) {
       ) : null}
 
       <AddMemberSheet visible={!!adding} onClose={() => setAdding(null)} loading={invite.isPending} onSubmit={(v) => adding && invite.mutate({ g: adding, v })} />
-      <MemberSheet member={selected?.m ?? null} onClose={() => setSelected(null)} canManage={!!selected && (selected.g.my_role === "owner" || selected.g.my_role === "admin")}
-        onResend={() => selected?.m.invitation && act.mutate(`/invitations/${selected.m.invitation.id}/resend`)}
-        onCancel={() => selected?.m.invitation && act.mutate(`/invitations/${selected.m.invitation.id}/cancel`)}
-        onRemove={() => selected && removeMember.mutate(selected)} />
+      <MemberSheet member={selectedMember} onClose={() => setSelected(null)} canManage={!!selectedGroup && (selectedGroup.my_role === "owner" || selectedGroup.my_role === "admin")} changingRole={changeRole.isPending}
+        onResend={() => selectedMember?.invitation && act.mutate(`/invitations/${selectedMember.invitation.id}/resend`)}
+        onCancel={() => selectedMember?.invitation && act.mutate(`/invitations/${selectedMember.invitation.id}/cancel`)}
+        onRemove={() => selected && removeMember.mutate(selected)}
+        onChangeRole={(role) => selected && changeRole.mutate({ ...selected, role })} />
     </View>
   );
 }

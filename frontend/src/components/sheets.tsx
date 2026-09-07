@@ -80,13 +80,14 @@ function Option({ active, onPress, title, sub, icon, testID }: { active: boolean
 export type MemberInfo = { id: string; display_name: string; status: string; membership: string; role: string; expires_at?: string | null; location_state?: string; user_id?: string | null; color?: string;
   invitation?: { id: string; status: string; channel: string; created_at: string; dispatched_at?: string | null } };
 
-export function MemberSheet({ member, onClose, onResend, onCancel, onRemove, canManage }: { member: MemberInfo | null; onClose: () => void; onResend?: () => void; onCancel?: () => void; onRemove?: () => void; canManage: boolean }) {
+export function MemberSheet({ member, onClose, onResend, onCancel, onRemove, onChangeRole, canManage, changingRole }: { member: MemberInfo | null; onClose: () => void; onResend?: () => void; onCancel?: () => void; onRemove?: () => void; onChangeRole?: (role: string) => void; canManage: boolean; changingRole?: boolean }) {
   const { colors } = useTheme();
   if (!member) return null;
   const pending = member.status === "pending";
   const inv = member.invitation;
   const statusLabel = pending ? "A la espera de confirmación" : member.status === "active" ? "Miembro activo" : member.status === "declined" ? "Invitación rechazada" : member.status === "expired" ? "Invitación temporal expirada" : member.status;
   const locLabel = { shared: "Ubicación compartida", not_shared: "Ubicación no compartida", permission_pending: "Permiso de ubicación pendiente", pending_invitation: "Invitación pendiente" }[member.location_state ?? ""] ?? "";
+  const canEditRole = canManage && !!onChangeRole && member.role !== "owner";
   return (
     <Sheet visible={!!member} onClose={onClose} testID="member-sheet">
       <T weight="bold" style={{ fontSize: 20 }}>{member.display_name}</T>
@@ -103,6 +104,16 @@ export function MemberSheet({ member, onClose, onResend, onCancel, onRemove, can
           {member.expires_at ? <T style={{ color: colors.muted, fontSize: 13 }}>Expira: {new Date(member.expires_at).toLocaleString("es-ES")}</T> : null}
         </View>
       ) : null}
+      {canEditRole ? (
+        <View style={{ marginTop: spacing.lg }}>
+          <T weight="semibold" style={{ fontSize: 13, marginBottom: spacing.sm }}>Permisos en el grupo</T>
+          <View style={{ gap: 6 }}>
+            {(Object.keys(ROLE_LABEL) as (keyof typeof ROLE_LABEL)[]).map((r) => (
+              <RoleRow key={r} testID={`member-role-${r}`} label={ROLE_LABEL[r]} sub={ROLE_SUB[r]} active={member.role === r} loading={!!changingRole} onPress={() => r !== member.role && onChangeRole?.(r)} />
+            ))}
+          </View>
+        </View>
+      ) : null}
       {canManage ? (
         <View style={{ gap: spacing.sm, marginTop: spacing.xl }}>
           {pending && onResend ? <Button testID="member-resend-button" title="Reenviar invitación" variant="secondary" icon="refresh" onPress={onResend} /> : null}
@@ -114,6 +125,28 @@ export function MemberSheet({ member, onClose, onResend, onCancel, onRemove, can
   );
 }
 
+const ROLE_LABEL = { admin: "Administrador", adult_responsible: "Adulto responsable", adult_member: "Miembro adulto", protected_minor: "Menor protegido", temporary_guest: "Invitado temporal" } as const;
+const ROLE_SUB = {
+  admin: "Puede gestionar miembros, invitaciones y roles",
+  adult_responsible: "Adulto con responsabilidad sobre menores del grupo",
+  adult_member: "Miembro adulto sin permisos de gestión",
+  protected_minor: "Menor bajo supervisión: visibilidad reforzada",
+  temporary_guest: "Acceso temporal, sin permisos de gestión",
+} as const;
+
+function RoleRow({ label, sub, active, onPress, testID, loading }: { label: string; sub: string; active: boolean; onPress: () => void; testID: string; loading: boolean }) {
+  const s = useStyles(); const { colors } = useTheme();
+  return (
+    <Pressable testID={testID} onPress={onPress} disabled={active || loading} style={[s.roleRow, active && s.roleRowOn]}>
+      <View style={{ flex: 1 }}>
+        <T weight="semibold" style={{ fontSize: 14, color: active ? colors.brandPrimary : colors.onSurface }}>{label}</T>
+        <T style={{ fontSize: 11, color: colors.muted }}>{sub}</T>
+      </View>
+      {active ? <Ionicons name="checkmark-circle" size={20} color={colors.brandPrimary} /> : <Ionicons name="ellipse-outline" size={20} color={colors.border} />}
+    </Pressable>
+  );
+}
+
 const useStyles = makeStyles((c) => ({
   backdrop: { flex: 1, backgroundColor: c.overlay },
   sheet: { backgroundColor: c.surfaceSecondary, borderTopLeftRadius: radius.lg + 8, borderTopRightRadius: radius.lg + 8, padding: spacing.lg, maxHeight: "88%", overflow: "hidden" },
@@ -122,4 +155,6 @@ const useStyles = makeStyles((c) => ({
   optionOn: { borderColor: c.brandPrimary, backgroundColor: c.surfaceSecondary },
   chip: { height: 36, paddingHorizontal: 14, borderRadius: radius.pill, backgroundColor: c.surfaceTertiary, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: c.border },
   chipOn: { backgroundColor: c.brandPrimary, borderColor: c.brandPrimary },
+  roleRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, padding: spacing.md, borderRadius: radius.md, backgroundColor: c.surfaceTertiary, borderWidth: 1.5, borderColor: c.border },
+  roleRowOn: { borderColor: c.brandPrimary, backgroundColor: c.surfaceSecondary },
 }));

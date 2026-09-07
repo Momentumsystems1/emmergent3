@@ -29,7 +29,7 @@ export default function GroupDetail() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const [selected, setSelected] = useState<MemberInfo | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
@@ -62,7 +62,11 @@ export default function GroupDetail() {
   });
   const act = useMutation({
     mutationFn: ({ path, method = "POST" }: { path: string; method?: string }) => api(path, { method }),
-    onSuccess: () => { setSelected(null); refresh(); }, onError: (e: any) => toast(e.message, "error"),
+    onSuccess: () => { setSelectedId(null); refresh(); }, onError: (e: any) => toast(e.message, "error"),
+  });
+  const changeRole = useMutation({
+    mutationFn: ({ mid, role }: { mid: string; role: string }) => api(`/groups/${id}/members/${mid}/role`, { method: "PATCH", json: { role } }),
+    onSuccess: () => { toast("Permisos actualizados", "success"); refresh(); }, onError: (e: any) => toast(e.message, "error"),
   });
   const eventAction = useMutation({
     mutationFn: ({ eid, action }: { eid: string; action: string }) => api(`/events/${eid}/action`, { method: "POST", json: { action } }),
@@ -70,6 +74,7 @@ export default function GroupDetail() {
   });
 
   const group = g.data;
+  const selected: MemberInfo | null = group?.members.find((m: any) => m.id === selectedId) ?? null;
   const size = Math.min(width - spacing.xl * 2, 320);
   const isOwner = group?.owner_id === user?.id;
   return (
@@ -105,11 +110,11 @@ export default function GroupDetail() {
             <View style={{ alignItems: "center", paddingVertical: spacing.lg }}>
               <OrbitalField size={size} phase="editing" groupName={group.name}
                 members={group.members.map((m: any) => ({ id: m.id, name: m.display_name, color: m.color, isMe: m.user_id === user?.id, status: m.status === "active" ? "active" : m.status === "declined" ? "declined" : m.status === "expired" ? "expired" : "pending" }))}
-                onMemberPress={(m) => { const full = group.members.find((x: any) => x.id === m.id); if (full) setSelected(full); }} />
+                onMemberPress={(m) => setSelectedId(m.id)} />
             </View>
             <View style={{ paddingHorizontal: spacing.lg, gap: spacing.sm }}>
               {group.members.map((m: any) => (
-                <Pressable key={m.id} testID={`member-row-${m.id}`} onPress={() => setSelected(m)} style={s.row}>
+                <Pressable key={m.id} testID={`member-row-${m.id}`} onPress={() => setSelectedId(m.id)} style={s.row}>
                   <View style={[s.dot, { backgroundColor: m.status === "active" ? m.color : colors.pending }]} />
                   <View style={{ flex: 1 }}>
                     <T weight="semibold">{m.display_name}{m.user_id === user?.id ? " (tú)" : ""}</T>
@@ -148,10 +153,11 @@ export default function GroupDetail() {
         ) : null}
       </ScrollView>
       <AddMemberSheet visible={adding} onClose={() => setAdding(false)} loading={invite.isPending} onSubmit={(v) => invite.mutate(v)} />
-      <MemberSheet member={selected} onClose={() => setSelected(null)} canManage={!!canManage}
+      <MemberSheet member={selected} onClose={() => setSelectedId(null)} canManage={!!canManage} changingRole={changeRole.isPending}
         onResend={() => selected?.invitation && act.mutate({ path: `/invitations/${selected.invitation.id}/resend` })}
         onCancel={() => selected?.invitation && act.mutate({ path: `/invitations/${selected.invitation.id}/cancel` })}
-        onRemove={() => selected && act.mutate({ path: `/groups/${id}/members/${selected.id}`, method: "DELETE" })} />
+        onRemove={() => selected && act.mutate({ path: `/groups/${id}/members/${selected.id}`, method: "DELETE" })}
+        onChangeRole={(role) => selected && changeRole.mutate({ mid: selected.id, role })} />
     </View>
   );
 }

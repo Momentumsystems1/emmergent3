@@ -1,6 +1,9 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import * as Linking from "expo-linking";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { Platform } from "react-native";
 
 import { api, clientMeta, loadTokens, saveTokens } from "@/src/api";
+import { cleanWebUrl, extractSessionId, openGoogleSignIn } from "@/src/googleAuth";
 import { storage } from "@/src/utils/storage";
 
 export type User = {
@@ -19,6 +22,9 @@ type Ctx = {
   loading: boolean;
   signIn: (email: string, password: string) => Promise<User>;
   register: (email: string, password: string) => Promise<User>;
+  /** Emergent-managed Google sign-in. Resolves with the user on mobile; on web it redirects (resolves null) and the
+   * session is completed on the next mount. */
+  signInWithGoogle: () => Promise<User | null>;
   signOut: () => Promise<void>;
   reload: () => Promise<User | null>;
   setUser: (u: User) => void;
@@ -64,20 +70,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  useEffect(() => {
-    reload().finally(() => setLoading(false));
-  }, [reload]);
-
   const handleTokens = async (res: any) => {
     await saveTokens({ access_token: res.access_token, refresh_token: res.refresh_token });
     setUser(res.user);
     return res.user as User;
   };
 
+  // One exchange per session_id (a deep link can surface the same id from several sources).
+  const exchanged = useRef(new Set<string>());
+  const exchange = useCallback(async (sessionId: string): Promise<User | null> => {
+    if (exchanged.current.has(sessionId)) return null;
+    exchanged.current.add(sessionId);
+    const res = await api("/auth/session", { method: "POST", auth: false, json: { session_id: sessionId } });
+    const u = await handleTokens(res);
+    if (!u.onboarding?.completed) {
+      const local = await getLocalOnboarding();
+      await api("/consents", { method: "POST", json: { document: "terms", version: "2026-06-01", accepted: true, accepted_at_client: local.terms_accepted_at ?? new Date().toISOString(), ...clientMeta } }).catch(() => null);
+      await setLocalOnboarding({ step: "consent" });
+    }
+    cleanWebUrl();
+    return u;
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      // A session_id on the URL always wins over a stored session (Critical Rule 3).
+      const url = Platform.OS === "web" ? window.location.href : await Linking.getInitialURL();
+      const sid = extractSessionId(url);
+      if (sid) { try { await exchange(sid); return; } catch { /* fall back to stored session */ } }
+      await reload();
+    })().finally(() => setLoading(false));
+    if (Platform.OS === "web") return;
+    const sub = Linking.addEventListener("url", (e) => { const sid = extractSessionId(e.url); if (sid) exchange(sid).catch(() => null); });
+    return () => sub.remove();
+  }, [reload, exchange]);
+
   const value = useMemo<Ctx>(() => ({
     user, loading, reload, setUser,
     signIn: async (email, password) => handleTokens(await api("/auth/login", { method: "POST", auth: false, json: { email, password, ...clientMeta } })),
     register: async (email, password) => handleTokens(await api("/auth/register", { method: "POST", auth: false, json: { email, password, ...clientMeta } })),
+    signInWithGoogle: async () => { const sid = await openGoogleSignIn(); return sid ? exchange(sid) : null; },
     signOut: async () => {
       const t = await loadTokens();
       if (t) await api("/auth/logout", { method: "POST", json: { refresh_token: t.refresh_token } }).catch(() => null);
@@ -85,7 +117,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await storage.removeItem(ONBOARDING_KEY);
       setUser(null);
     },
-  }), [user, loading, reload]);
+  }), [user, loading, reload, exchange]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

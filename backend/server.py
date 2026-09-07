@@ -60,6 +60,8 @@ async def startup():
     await db.users.create_index("email", unique=True)
     await db.sessions.create_index("expires_at", expireAfterSeconds=0)
     await db.sessions.create_index("token_hash")
+    await db.user_sessions.create_index("session_token", unique=True)
+    await db.user_sessions.create_index("expires_at", expireAfterSeconds=0)
     await db.invitations.create_index("token", unique=True)
     await db.members.create_index([("group_id", 1), ("user_id", 1)])
     await db.positions.create_index("at", expireAfterSeconds=30 * 24 * 3600)

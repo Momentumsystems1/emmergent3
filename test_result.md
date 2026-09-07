@@ -121,3 +121,7 @@ backend (providers.py): GET /api/mobility/tiles/{road|dark|traffic}/{z}/{x}/{y}.
 frontend: MapCanvas native → Azure base UrlTile + traffic/incident tiles + incident markers; MapCanvas.web → real Azure static map with projection, tap→coordinate, zoom +/-;
   shared types in src/components/mapTypes.ts; map.tsx fab-traffic → traffic-panel (incident list) / incident-card, weather line in selected-point-card;
   drive.tsx tool-traffic → panel-traffic (incidents within 600 m of route + destination weather/alerts), incident markers on map
+
+## Iteration 5 — Emergent-managed Google sign-in
+backend: POST /api/auth/session {session_id} → exchanges once with Emergent (X-Session-ID), upserts user by email (password_hash null, auth_provider google), stores user_sessions row, returns app JWT pair (TokenResponse). Bogus id → 401. Login with password on a Google-only account → 401 "Esta cuenta usa Google".
+frontend: src/googleAuth.ts (platform redirect url, openAuthSessionAsync on mobile / window.location.href on web, session_id extraction from hash or query, URL cleanup after success), src/auth.tsx (session_id on URL processed before stored session; single-flight Set; url listener on mobile; signInWithGoogle), onboarding/account.tsx button google-signin-button.

@@ -50,3 +50,5 @@ Ver /app/memory/test_credentials.md.
 - P1: Renderer WebGL del Orbe (expo-gl + three) sobre RendererProps. Object Storage para foto de avatar. Pago (RevenueCat).
 - P2: Cámara compartida (WebRTC/TURN, build nativa). Road Reality (anonimización + STT). Transit/parking providers. V16. Métricas.
 - Deuda: props web deprecadas (`shadow*`→`boxShadow`, `pointerEvents` en style) señaladas por el tester; testID `account-mode-login`.
+- Sesión 5: Google sign-in gestionado por Emergent (`POST /auth/session` canjea session_id una vez, upsert por email, emite JWT propio;
+  `src/googleAuth.ts` + `AuthProvider` procesan `session_id` de la URL antes que la sesión guardada; botón en onboarding/account).

@@ -3,6 +3,7 @@ import secrets
 from datetime import timedelta
 
 import bcrypt
+import httpx
 import jwt
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, EmailStr, Field
@@ -87,8 +88,51 @@ async def register(c: Credentials):
 @router.post("/login", response_model=TokenResponse)
 async def login(c: Credentials):
     user = await db.users.find_one({"email": c.email.lower(), "deleted_at": None})
-    if not user or not _check_pw(c.password, user["password_hash"]):
-        raise HTTPException(401, "Email o contraseña incorrectos")
+    if not user or not user.get("password_hash") or not _check_pw(c.password, user["password_hash"]):
+        raise HTTPException(401, "Email o contraseña incorrectos" if not user or user.get("password_hash") else "Esta cuenta usa Google. Entra con Google.")
+    return await _issue(user)
+
+
+class SessionBody(BaseModel):
+    session_id: str
+
+
+@router.post("/session", response_model=TokenResponse)
+async def google_session(body: SessionBody):
+    """Emergent-managed Google sign-in: exchange the one-time session_id (exactly once, server-side) for the Google profile,
+    upsert the user by email and issue the app's own JWT pair so every other endpoint keeps working unchanged."""
+    try:
+        async with httpx.AsyncClient(timeout=10) as c:
+            r = await c.get("https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data", headers={"X-Session-ID": body.session_id})
+    except httpx.HTTPError:
+        raise HTTPException(401, "No se pudo validar la sesión de Google")
+    if r.status_code != 200:
+        raise HTTPException(401, "Sesión de Google no válida o expirada")
+    d = r.json()
+    email = (d.get("email") or "").lower()
+    if not email:
+        raise HTTPException(401, "Google no devolvió un email")
+    google = {"name": d.get("name"), "picture": d.get("picture"), "linked_at": now()}
+    user = await db.users.find_one({"email": email, "deleted_at": None})
+    if user:
+        await db.users.update_one({"_id": user["_id"]}, {"$set": {"google": google}})
+        user["google"] = google
+    else:
+        doc = {"email": email, "password_hash": None, "auth_provider": "google", "google": google, "created_at": now(), "deleted_at": None,
+               "language": "es", "plan": "free", "account_role": "owner", "delegated_permissions": [],
+               "onboarding": {"completed": False, "step": "consent"}, "profile": None,
+               "avatar": {"color": "#22D3EE", "symbol": "pin", "outline": "solid"}}
+        try:
+            res = await db.users.insert_one(doc)
+            doc["_id"] = res.inserted_id
+        except DuplicateKeyError:
+            doc = await db.users.find_one({"email": email, "deleted_at": None})
+            if not doc:
+                raise HTTPException(409, "Esta cuenta fue eliminada. Contacta con soporte para reactivarla.")
+        user = doc
+    if d.get("session_token"):
+        await db.user_sessions.insert_one({"session_token": d["session_token"], "user_id": str(user["_id"]), "created_at": now(),
+                                           "expires_at": now() + timedelta(days=7)})
     return await _issue(user)
 
 

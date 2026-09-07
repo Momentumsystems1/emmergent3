@@ -10,6 +10,7 @@ import { getLocalOnboarding, setLocalOnboarding, useAuth } from "@/src/auth";
 import { OnboardingScreen } from "@/src/components/OnboardingScreen";
 import { T, toast } from "@/src/components/ui";
 import { fonts, makeStyles, radius, spacing, useTheme } from "@/src/theme";
+import { storage } from "@/src/utils/storage";
 
 export default function Account() {
   const router = useRouter();
@@ -31,8 +32,11 @@ export default function Account() {
         await api("/consents", { method: "POST", json: { document: "terms", version: "2026-06-01", accepted: true, accepted_at_client: local.terms_accepted_at ?? new Date().toISOString(), ...clientMeta } }).catch(() => null);
       }
       await setLocalOnboarding({ step: "consent" });
-      if (u.onboarding?.completed) router.replace("/map");
-      else router.replace(u.onboarding?.step === "profile" ? "/onboarding/profile" : u.onboarding?.step === "group" ? "/onboarding/group" : "/onboarding/profile");
+      const pendingInvite = await storage.getItem<string | null>("sentinel.pending_invite", null);
+      if (u.onboarding?.completed) router.replace(pendingInvite ? `/invite/${pendingInvite}` : "/map");
+      else if (u.onboarding?.step === "profile") router.replace("/onboarding/consent");
+      else if (u.onboarding?.step === "group") router.replace(pendingInvite ? `/invite/${pendingInvite}` : "/onboarding/group");
+      else router.replace("/onboarding/consent");
     } catch (e: any) {
       toast(e?.message ?? "No se pudo continuar", "error");
     } finally { setLoading(false); }
@@ -43,8 +47,11 @@ export default function Account() {
     try {
       const u = await signInWithGoogle();
       if (!u) return; // web: full-page redirect in progress, or the user cancelled on mobile
-      if (u.onboarding?.completed) router.replace("/map");
-      else router.replace(u.onboarding?.step === "profile" ? "/onboarding/profile" : u.onboarding?.step === "group" ? "/onboarding/group" : "/onboarding/profile");
+      const pendingInvite = await storage.getItem<string | null>("sentinel.pending_invite", null);
+      if (u.onboarding?.completed) router.replace(pendingInvite ? `/invite/${pendingInvite}` : "/map");
+      else if (u.onboarding?.step === "profile") router.replace("/onboarding/consent");
+      else if (u.onboarding?.step === "group") router.replace(pendingInvite ? `/invite/${pendingInvite}` : "/onboarding/group");
+      else router.replace("/onboarding/consent");
     } catch (e: any) {
       toast(e?.message ?? "No se pudo iniciar sesión con Google", "error");
     } finally { setGLoading(false); }

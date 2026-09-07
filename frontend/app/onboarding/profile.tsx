@@ -12,6 +12,7 @@ import { PhotoPicker } from "@/src/components/PhotoPicker";
 import { T, toast } from "@/src/components/ui";
 import { AVATAR_COLORS, SYMBOLS } from "@/src/copy";
 import { fonts, makeStyles, radius, spacing, useTheme } from "@/src/theme";
+import { storage } from "@/src/utils/storage";
 
 export default function Profile() {
   const router = useRouter();
@@ -30,7 +31,9 @@ export default function Profile() {
       await api("/profile", { method: "PUT", json: { name: name.trim(), surname: surname.trim() || null, language: "es" } });
       await api("/profile/avatar", { method: "PUT", json: { color, symbol, outline: "solid" } });
       await reload();
-      router.replace("/onboarding/group");
+      // A person invited to an existing group joins it directly; they must never be routed through "create your own circle".
+      const pendingInvite = await storage.getItem<string | null>("sentinel.pending_invite", null);
+      router.replace(pendingInvite ? `/invite/${pendingInvite}` : "/onboarding/group");
     } catch (e: any) { toast(e?.message ?? "No se pudo guardar el perfil", "error"); } finally { setLoading(false); }
   };
 

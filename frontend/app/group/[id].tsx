@@ -115,13 +115,17 @@ export default function GroupDetail() {
             <View style={{ paddingHorizontal: spacing.lg, gap: spacing.sm }}>
               {group.members.map((m: any) => (
                 <Pressable key={m.id} testID={`member-row-${m.id}`} onPress={() => setSelectedId(m.id)} style={s.row}>
-                  <View style={[s.dot, { backgroundColor: m.status === "active" ? m.color : colors.pending }]} />
-                  <View style={{ flex: 1 }}>
-                    <T weight="semibold">{m.display_name}{m.user_id === user?.id ? " (tú)" : ""}</T>
-                    <T style={{ fontSize: 12, color: colors.muted }}>{ROLE[m.role] ?? m.role} · {m.membership === "temporary" ? "temporal" : "fijo"}{m.expires_at ? ` · expira ${new Date(m.expires_at).toLocaleDateString("es-ES")}` : ""}</T>
+                  <View style={s.rowMain}>
+                    <View style={[s.dot, { backgroundColor: m.status === "active" ? m.color : colors.pending }]} />
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <T weight="semibold" numberOfLines={1}>{m.display_name}{m.user_id === user?.id ? " (tú)" : ""}</T>
+                      <T style={{ fontSize: 12, color: colors.muted }} numberOfLines={1}>{ROLE[m.role] ?? m.role} · {m.membership === "temporary" ? "temporal" : "fijo"}{m.expires_at ? ` · expira ${new Date(m.expires_at).toLocaleDateString("es-ES")}` : ""}</T>
+                    </View>
                   </View>
-                  <Pill label={STATUS[m.status] ?? m.status} tone={m.status === "active" ? "cyan" : m.status === "pending" ? "muted" : "red"} />
-                  {m.status === "active" ? <Pill label={LOC[m.location_state] ?? ""} tone={m.location_state === "shared" ? "green" : "muted"} /> : null}
+                  <View style={s.rowPills}>
+                    <Pill label={STATUS[m.status] ?? m.status} tone={m.status === "active" ? "cyan" : m.status === "pending" ? "muted" : "red"} />
+                    {m.status === "active" ? <Pill label={LOC[m.location_state] ?? ""} tone={m.location_state === "shared" ? "green" : "muted"} /> : null}
+                  </View>
                 </Pressable>
               ))}
               {canManage ? (<><T weight="bold" style={{ marginTop: spacing.lg }}>Invitar</T><InviteOptions groupId={id!} groupName={group.name} onChanged={() => qc.invalidateQueries({ queryKey: ["group", id] })} /></>) : null}
@@ -164,7 +168,7 @@ export default function GroupDetail() {
 
 const ROLE: Record<string, string> = { owner: "Propietario", admin: "Administrador", adult_responsible: "Adulto responsable", adult_member: "Miembro adulto", protected_minor: "Menor protegido", temporary_guest: "Invitado temporal" };
 const STATUS: Record<string, string> = { active: "Activo", pending: "Pendiente", declined: "Rechazada", expired: "Expirada", removed: "Eliminado" };
-const LOC: Record<string, string> = { shared: "Ubicación", not_shared: "Sin ubicación", permission_pending: "Permiso pendiente" };
+const LOC: Record<string, string> = { shared: "Ubicación", not_shared: "Sin ubicación", permission_pending: "Ubicación: permiso pendiente" };
 
 const useStyles = makeStyles((c) => ({
   root: { flex: 1, backgroundColor: c.surface },
@@ -174,6 +178,8 @@ const useStyles = makeStyles((c) => ({
   tabs: { flexDirection: "row", gap: spacing.sm, paddingHorizontal: spacing.lg },
   tab: { height: 36, paddingHorizontal: 16, borderRadius: radius.pill, backgroundColor: c.surfaceTertiary, alignItems: "center", justifyContent: "center" },
   tabOn: { backgroundColor: c.brandPrimary },
-  row: { flexDirection: "row", alignItems: "center", gap: spacing.sm, backgroundColor: c.surfaceSecondary, borderRadius: radius.md, padding: spacing.md, borderWidth: 1, borderColor: c.border, flexWrap: "wrap" },
+  row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.sm, backgroundColor: c.surfaceSecondary, borderRadius: radius.md, padding: spacing.md, borderWidth: 1, borderColor: c.border },
+  rowMain: { flexDirection: "row", alignItems: "center", gap: spacing.sm, flex: 1, minWidth: 0 },
+  rowPills: { flexDirection: "row", flexWrap: "wrap", gap: 6, justifyContent: "flex-end", maxWidth: 150 },
   dot: { width: 12, height: 12, borderRadius: 6 },
 }));

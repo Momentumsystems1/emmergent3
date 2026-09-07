@@ -86,7 +86,7 @@ export function MemberSheet({ member, onClose, onResend, onCancel, onRemove, onC
   const pending = member.status === "pending";
   const inv = member.invitation;
   const statusLabel = pending ? "A la espera de confirmación" : member.status === "active" ? "Miembro activo" : member.status === "declined" ? "Invitación rechazada" : member.status === "expired" ? "Invitación temporal expirada" : member.status;
-  const locLabel = { shared: "Ubicación compartida", not_shared: "Ubicación no compartida", permission_pending: "Permiso de ubicación pendiente", pending_invitation: "Invitación pendiente" }[member.location_state ?? ""] ?? "";
+  const locLabel = { shared: "Ubicación compartida", not_shared: "Ubicación no compartida", permission_pending: "Ubicación: permiso pendiente", pending_invitation: "Invitación pendiente" }[member.location_state ?? ""] ?? "";
   const canEditRole = canManage && !!onChangeRole && member.role !== "owner";
   return (
     <Sheet visible={!!member} onClose={onClose} testID="member-sheet">

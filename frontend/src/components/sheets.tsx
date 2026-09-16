@@ -85,14 +85,16 @@ export function MemberSheet({ member, onClose, onResend, onCancel, onRemove, onC
   if (!member) return null;
   const pending = member.status === "pending";
   const inv = member.invitation;
-  const statusLabel = pending ? "A la espera de confirmación" : member.status === "active" ? "Miembro activo" : member.status === "declined" ? "Invitación rechazada" : member.status === "expired" ? "Invitación temporal expirada" : member.status;
+  const STATUS_LABEL: Record<string, string> = { open: "Enlace activo", accepted: "Aceptada", cancelled: "Cancelada", removed: "Eliminado" };
+  const statusLabel = pending ? "A la espera de confirmación" : member.status === "active" ? "Miembro activo" : member.status === "declined" ? "Invitación rechazada" : member.status === "expired" ? "Invitación temporal expirada" : (STATUS_LABEL[member.status] ?? member.status);
+  const statusTone = pending ? "muted" : member.status === "active" ? "cyan" : member.status === "open" ? "amber" : "red";
   const locLabel = { shared: "Ubicación compartida", not_shared: "Ubicación no compartida", permission_pending: "Ubicación: permiso pendiente", pending_invitation: "Invitación pendiente" }[member.location_state ?? ""] ?? "";
   const canEditRole = canManage && !!onChangeRole && member.role !== "owner";
   return (
     <Sheet visible={!!member} onClose={onClose} testID="member-sheet">
       <T weight="bold" style={{ fontSize: 20 }}>{member.display_name}</T>
       <View style={{ flexDirection: "row", gap: 8, marginTop: spacing.sm, flexWrap: "wrap" }}>
-        <Pill testID="member-status-pill" label={statusLabel} tone={pending ? "muted" : member.status === "active" ? "cyan" : "red"} />
+        <Pill testID="member-status-pill" label={statusLabel} tone={statusTone} />
         <Pill label={member.membership === "temporary" ? "Invitado temporal" : "Miembro fijo"} tone={member.membership === "temporary" ? "amber" : "blue"} />
         {locLabel ? <Pill testID="member-location-pill" label={locLabel} tone={member.location_state === "shared" ? "green" : "muted"} /> : null}
       </View>

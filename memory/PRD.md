@@ -58,3 +58,15 @@ Ver /app/memory/test_credentials.md.
   carril izquierdo de GRUPOS con latido rojo (GroupsRail), FAB Privacidad fucsia (SharingPanel) + SOS rojo degradado (evento emergency a todos los grupos),
   cámara 3D nativa (pitch 50, edificios, marcador propio plano anclado). Pendientes fases ③–⑥: menú completo del punto (geocerca, guardar sitio, evento
   programado, ETA del círculo, incidencia), edición/permisos por miembro, métricas/horarios de visibilidad en hamburguesa, overlay de emergencias.
+
+## Sesión 7 (rediseño mapa por fases; clave NAP = 20d7e5ae-a791-4940-86b8-0eaadac7e5f5, Punto de Acceso Nacional transporte público)
+Plan acordado con el usuario (paso a paso): F1 perfil+tarjetas miembro · F2 SOS completo · F3 mapa 3D+radio grupo · F4 quedada optimizada · F5 NAP.
+Receptores del SOS = contactos de emergencia elegidos por el usuario (selector a implementar en F2).
+- **Fase 1 COMPLETADA (2026-06):**
+  - Perfil: subida de foto de avatar (expo-image-picker → POST /profile/photo, DELETE para quitar). `app/profile.tsx`.
+  - Mapa: eliminados los círculos de herramientas de la derecha. Ahora carril DERECHO de MIEMBROS = un rectángulo negro+blur por miembro
+    (`src/components/MemberRail.tsx`): avatar con borde del color del miembro (foto o inicial), nombre, calle+nº (reverse geocode) o estado, y ">".
+    Al pulsarlo abre `src/components/MemberToolsSheet.tsx` (Centrar, Ir hacia, ¿Todo bien?, Quedar, Convoy, Ficha; ETA me→miembro).
+  - Norma de diseño: `src/components/BlurCard.tsx` (fondo negro translúcido + BlurView, texto blanco, no ocupa todo el mapa). BLUR_TEXT/BLUR_MUTED.
+  - Controles del mapa reubicados: SOS abajo-centro (66px), Privacidad+Tráfico+Recentrar abajo-izquierda (44px). Tarjetas inferiores subidas +84 para no tapar SOS.
+  - Verificado por screenshot (login ana.demo): rectángulos, ficha de miembro y perfil OK. Backend intacto en F1.

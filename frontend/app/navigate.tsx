@@ -114,7 +114,7 @@ export default function Navigate() {
               </View>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }} style={{ height: 44, flexGrow: 0 }}>
                 {MODES.map(([k, l, ic]) => <Pressable key={k} testID={`mode-${k}`} onPress={() => setMode(k)} style={[s.chip, mode === k && s.chipOn]}><Ionicons name={ic as any} size={14} color={mode === k ? colors.onBrandPrimary : colors.onSurface} /><T weight="semibold" style={{ fontSize: 13, color: mode === k ? colors.onBrandPrimary : colors.onSurface }}>{l}</T></Pressable>)}
-                <Pressable testID="mode-transit" onPress={() => showUnavailable({ code: "SERVICE_NOT_CONFIGURED", title: "SERVICIO NO CONFIGURADO", reason: "Transporte público no disponible en el proveedor actual (Azure Maps). Requiere integración GTFS de operadores." })} style={[s.chip, { opacity: 0.6 }]}><Ionicons name="train" size={14} color={colors.muted} /><T style={{ fontSize: 13, color: colors.muted }}>Transporte público</T></Pressable>
+                <Pressable testID="mode-transit" onPress={() => showUnavailable({ code: "SERVICE_NOT_CONFIGURED", title: "SERVICIO NO CONFIGURADO", reason: "Transporte público no disponible en el proveedor actual (Mapbox). Requiere integración GTFS de operadores." })} style={[s.chip, { opacity: 0.6 }]}><Ionicons name="train" size={14} color={colors.muted} /><T style={{ fontSize: 13, color: colors.muted }}>Transporte público</T></Pressable>
               </ScrollView>
               <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                 {stops.map((st, i) => <Pill key={i} label={`${i + 1}. ${st.label}`} tone="amber" testID={`stop-${i}`} />)}

@@ -10,7 +10,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Location from "expo-location";
 import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Switch, View } from "react-native";
 import Animated, { FadeInDown, FadeOut, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -22,7 +22,7 @@ import { MainMenu } from "@/src/components/MainMenu";
 import { MemberRail } from "@/src/components/MemberRail";
 import { MemberToolsSheet } from "@/src/components/MemberToolsSheet";
 import { SharingPanel } from "@/src/components/SharingFab";
-import { UserCard } from "@/src/components/UserCard";
+import { UserCard, useBattery } from "@/src/components/UserCard";
 import { UserPhoto } from "@/src/components/UserPhoto";
 import { LinearGradient } from "expo-linear-gradient";
 import { Button, Glass, T, toast } from "@/src/components/ui";
@@ -53,7 +53,6 @@ export default function MapHome() {
   const s = useStyles();
   const { colors } = useTheme();
   const qc = useQueryClient();
-  const [greet, setGreet] = useState(true);
   const [sharing, setSharing] = useState(false);
   const [mainMenu, setMainMenu] = useState(false);
   const [userOpen, setUserOpen] = useState(false);
@@ -69,6 +68,13 @@ export default function MapHome() {
   const [followMode, setFollowMode] = useState<"off" | "follow" | "heading">("off");
   const [deviceHeading, setDeviceHeading] = useState(0);
   const [mapHeading, setMapHeading] = useState(0);
+  const [refreshSec, setRefreshSec] = useState(10);
+  const [locPaused, setLocPaused] = useState(false);
+  const [schedOn, setSchedOn] = useState(false);
+  const [schedFrom, setSchedFrom] = useState(8);
+  const [schedTo, setSchedTo] = useState(22);
+  const [refreshOpen, setRefreshOpen] = useState(false);
+  const [availOpen, setAvailOpen] = useState(false);
   const hideAnim = useSharedValue(0);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { hideAnim.value = withTiming(hidden ? 1 : 0, { duration: 220 }); }, [hidden]);
@@ -81,7 +87,12 @@ export default function MapHome() {
   const perms = useQuery({ queryKey: ["permissions"], queryFn: () => api<Record<string, any>>("/permissions") });
   const positions = useQuery({ queryKey: ["positions", group?.id], enabled: !!group, refetchInterval: 10000, queryFn: () => api<MapPerson[]>(`/groups/${group.id}/positions`) });
   const sharesLocation = !!perms.data && Object.values(perms.data).some((v: any) => v.effective && (v.key === "exact_location" || v.key === "approx_location"));
-  const loc = useLocationSharing(sharesLocation);
+  const hourNow = new Date().getHours();
+  const withinSchedule = schedFrom === schedTo ? true : schedFrom < schedTo ? (hourNow >= schedFrom && hourNow < schedTo) : (hourNow >= schedFrom || hourNow < schedTo);
+  const locPausedEff = locPaused || (schedOn && !withinSchedule);
+  const loc = useLocationSharing(sharesLocation, { refreshSec, paused: locPausedEff });
+  const battery = useBattery();
+  const headPlace = useQuery({ queryKey: ["reverse", myPos?.lat?.toFixed(3), myPos?.lng?.toFixed(3)], enabled: !!myPos, staleTime: 120000, retry: false, queryFn: () => api<{ name: string; municipality?: string; street?: string }>(`/mobility/reverse?lat=${myPos!.lat}&lng=${myPos!.lng}`) });
   const reverse = useQuery({ queryKey: ["reverse", sel?.lat, sel?.lng], enabled: !!sel, retry: false, queryFn: () => api<{ name: string }>(`/mobility/reverse?lat=${sel!.lat}&lng=${sel!.lng}`) });
   const weather = useQuery({ queryKey: ["weather", sel?.lat?.toFixed(3), sel?.lng?.toFixed(3)], enabled: !!sel, retry: false, staleTime: 600000, queryFn: () => api<any>(`/mobility/weather?lat=${sel!.lat}&lng=${sel!.lng}`) });
   const [traffic, setTraffic] = useState(false);
@@ -99,7 +110,13 @@ export default function MapHome() {
     catch (e: any) { toast(e.message, "error"); }
   };
 
-  useEffect(() => { const t = setTimeout(() => setGreet(false), 4000); return () => clearTimeout(t); }, []);
+  useEffect(() => { (async () => {
+    setRefreshSec((await storage.getItem<number>("sentinel.loc.refreshSec", 10)) ?? 10);
+    setLocPaused((await storage.getItem<boolean>("sentinel.loc.paused", false)) ?? false);
+    setSchedOn((await storage.getItem<boolean>("sentinel.loc.schedOn", false)) ?? false);
+    setSchedFrom((await storage.getItem<number>("sentinel.loc.schedFrom", 8)) ?? 8);
+    setSchedTo((await storage.getItem<number>("sentinel.loc.schedTo", 22)) ?? 22);
+  })(); }, []);
   useEffect(() => { storage.getItem<string | null>("sentinel.pending_invite", null).then((t) => { if (t) router.push(`/invite/${t}`); }); }, [router]);
   useEffect(() => { if (sharesLocation && loc.perm !== "granted") setLocBanner(true); }, [sharesLocation, loc.perm]);
   useEffect(() => { if (loc.lastSentAt) qc.invalidateQueries({ queryKey: ["positions"] }); }, [loc.lastSentAt, qc]);
@@ -128,8 +145,13 @@ export default function MapHome() {
     return () => sub?.remove?.();
   }, [followMode]);
 
-  const closeAll = () => { setSel(null); setMemberSel(null); setSharing(false); setTrafficPanel(false); setIncSel(null); setUserOpen(false); setSosOpen(false); setLayersOpen(false); };
-  const anyOpen = !!sel || !!memberSel || sharing || trafficPanel || !!incSel || userOpen || sosOpen || layersOpen || (locBanner && loc.perm !== "granted");
+  const closeAll = () => { setSel(null); setMemberSel(null); setSharing(false); setTrafficPanel(false); setIncSel(null); setUserOpen(false); setSosOpen(false); setLayersOpen(false); setRefreshOpen(false); setAvailOpen(false); };
+  const anyOpen = !!sel || !!memberSel || sharing || trafficPanel || !!incSel || userOpen || sosOpen || layersOpen || refreshOpen || availOpen || (locBanner && loc.perm !== "granted");
+  const setRefresh = (v: number) => { setRefreshSec(v); storage.setItem("sentinel.loc.refreshSec", v); };
+  const togglePause = () => { setLocPaused((p) => { const n = !p; storage.setItem("sentinel.loc.paused", n); return n; }); };
+  const toggleSched = () => { setSchedOn((p) => { const n = !p; storage.setItem("sentinel.loc.schedOn", n); return n; }); };
+  const setFrom = (v: number) => { const h = (v + 24) % 24; setSchedFrom(h); storage.setItem("sentinel.loc.schedFrom", h); };
+  const setTo = (v: number) => { const h = (v + 24) % 24; setSchedTo(h); storage.setItem("sentinel.loc.schedTo", h); };
   const onMapPress = (c?: LatLng) => { setHidden(false); if (anyOpen) { closeAll(); setLocBanner(false); return; } if (c) setSel(c); };
   const recenter = () => { setHidden(false); closeAll(); if (!mePos) { toast(loc.perm === "granted" ? "Obteniendo tu ubicación…" : "Permite la ubicación para centrarte"); if (loc.perm !== "granted") setLocBanner(true); return; } setFollowMode("follow"); setFocus({ ...mePos, key: (focus?.key ?? 0) + 1 }); };
   // Google-Maps-style location button: off → recenter (follow, north-up); follow → tap again → heading (map points where the phone points); heading → back to follow.
@@ -194,7 +216,17 @@ export default function MapHome() {
             <UserPhoto userId={user?.id} name={name} color={userColor} size={36} hasPhoto={user?.has_photo} ring />
             <View style={{ flex: 1 }}>
               <T weight="bold" style={{ fontSize: 15, color: colors.onBrandPrimary }} numberOfLines={1} testID="bar-name">{name || "Tú"}</T>
-              <T style={{ fontSize: 11, color: colors.onBrandPrimary, opacity: 0.85 }} numberOfLines={1} testID={greet ? "bar-greeting" : "bar-prompt"}>{greet ? "Hola, bienvenido" : group ? group.name : "Sin grupo"}</T>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 1 }} testID="bar-status">
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 3, flexShrink: 1 }}>
+                  <Ionicons name="location" size={11} color={colors.onBrandPrimary} />
+                  <T style={{ fontSize: 11, color: colors.onBrandPrimary, opacity: 0.9 }} numberOfLines={1}>{mePos ? (headPlace.data?.municipality ?? headPlace.data?.street ?? "Ubicación obtenida") : "Sin ubicación"}</T>
+                </View>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 2 }}>
+                  <Ionicons name={battery.charging ? "battery-charging" : (battery.level ?? 1) <= 0.2 ? "battery-dead" : "battery-half"} size={13} color={colors.onBrandPrimary} />
+                  <T style={{ fontSize: 11, color: colors.onBrandPrimary, opacity: 0.9 }}>{battery.level != null ? `${Math.round(battery.level * 100)}%` : "—"}</T>
+                </View>
+                {tasks.length ? <View style={{ flexDirection: "row", alignItems: "center", gap: 2 }}><Ionicons name="notifications" size={12} color={colors.onBrandPrimary} /><T weight="bold" style={{ fontSize: 11, color: colors.onBrandPrimary }}>{tasks.length}</T></View> : null}
+              </View>
             </View>
           </Pressable>
           <Pressable testID="search-bar-input" onPress={() => { closeAll(); router.push({ pathname: "/navigate", params: originParams }); }} style={s.barIcon} accessibilityLabel="¿A dónde vamos?"><Ionicons name="search" size={20} color={colors.onBrandPrimary} /></Pressable>
@@ -248,7 +280,61 @@ export default function MapHome() {
           <Ionicons name="layers" size={18} color={(layersOpen || layers.length > 0) ? colors.onBrandPrimary : colors.onSurface} />
           {layers.length > 0 ? <View style={[s.fabBadge, { backgroundColor: colors.brandSecondary }]}><T weight="bold" style={{ fontSize: 9, color: colors.onBrandSecondary }}>{layers.length}</T></View> : null}
         </Pressable>
+        <Pressable testID="fab-refresh" onPress={() => { const next = !refreshOpen; closeAll(); setRefreshOpen(next); }} style={[s.pillFab, refreshOpen && s.fabOn]} accessibilityLabel="Intervalo de actualización (ahorro de batería)">
+          <Ionicons name="timer-outline" size={16} color={refreshOpen ? colors.onBrandPrimary : colors.onSurface} />
+          <T weight="bold" style={{ fontSize: 11, color: refreshOpen ? colors.onBrandPrimary : colors.onSurface }}>{refreshSec}s</T>
+        </Pressable>
+        <Pressable testID="fab-availability" onPress={() => { const next = !availOpen; closeAll(); setAvailOpen(next); }} style={[s.smallFab, (availOpen) && s.fabOn, locPausedEff && { borderColor: colors.error, borderWidth: 2 }]} accessibilityLabel="Disponibilidad de ubicación">
+          <Ionicons name={locPausedEff ? "eye-off" : "time"} size={18} color={availOpen ? colors.onBrandPrimary : locPausedEff ? colors.error : colors.onSurface} />
+        </Pressable>
       </Animated.View>
+
+      {/* Refresh interval picker (battery saver) */}
+      {refreshOpen ? (
+        <Animated.View entering={FadeInDown.duration(160)} exiting={FadeOut.duration(120)} style={[s.selCard, { left: spacing.md, right: spacing.md, bottom: insets.bottom + spacing.lg + 84 }]} testID="refresh-panel">
+          <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm, marginBottom: 4 }}>
+            <Ionicons name="timer-outline" size={18} color={colors.brandPrimary} />
+            <T weight="bold" style={{ fontSize: 14, flex: 1 }}>Actualización de posición</T>
+            <Pressable testID="refresh-close" onPress={() => setRefreshOpen(false)} hitSlop={8} style={s.closeBtn}><Ionicons name="close" size={16} color={colors.onSurface} /></Pressable>
+          </View>
+          <T style={{ fontSize: 12, color: colors.muted, marginBottom: spacing.sm }}>Cada cuánto envío tu posición. Más tiempo = más batería.</T>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
+            {[5, 10, 30, 60, 120, 300].map((sec) => (
+              <Pressable key={sec} testID={`refresh-${sec}`} onPress={() => setRefresh(sec)} style={[s.layerChip, refreshSec === sec && { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary }]}>
+                <T weight="semibold" style={{ fontSize: 12.5, color: refreshSec === sec ? colors.onBrandPrimary : colors.onSurface }}>{sec < 60 ? `${sec}s` : `${sec / 60} min`}</T>
+              </Pressable>
+            ))}
+          </View>
+        </Animated.View>
+      ) : null}
+
+      {/* Availability: temporary off + locatable schedule */}
+      {availOpen ? (
+        <Animated.View entering={FadeInDown.duration(160)} exiting={FadeOut.duration(120)} style={[s.selCard, { left: spacing.md, right: spacing.md, bottom: insets.bottom + spacing.lg + 84 }]} testID="availability-panel">
+          <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm, marginBottom: 4 }}>
+            <Ionicons name="time" size={18} color={colors.brandPrimary} />
+            <T weight="bold" style={{ fontSize: 14, flex: 1 }}>Disponibilidad de ubicación</T>
+            <Pressable testID="availability-close" onPress={() => setAvailOpen(false)} hitSlop={8} style={s.closeBtn}><Ionicons name="close" size={16} color={colors.onSurface} /></Pressable>
+          </View>
+          <Pressable testID="toggle-pause" onPress={togglePause} style={s.availRow}>
+            <Ionicons name={locPaused ? "eye-off" : "eye"} size={18} color={locPaused ? colors.error : colors.onSurface} />
+            <View style={{ flex: 1 }}><T weight="semibold" style={{ fontSize: 13 }}>Desactivar localización ahora</T><T style={{ fontSize: 11, color: colors.muted }}>{locPaused ? "Nadie te ve hasta que lo actives" : "Tu grupo ve tu ubicación"}</T></View>
+            <Switch value={locPaused} onValueChange={togglePause} />
+          </Pressable>
+          <Pressable testID="toggle-schedule" onPress={toggleSched} style={s.availRow}>
+            <Ionicons name="calendar" size={18} color={colors.onSurface} />
+            <View style={{ flex: 1 }}><T weight="semibold" style={{ fontSize: 13 }}>Solo localizable en un horario</T><T style={{ fontSize: 11, color: colors.muted }}>Fuera de esa franja no te ven</T></View>
+            <Switch value={schedOn} onValueChange={toggleSched} />
+          </Pressable>
+          {schedOn ? (
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-around", marginTop: spacing.sm }}>
+              <HourStepper testID="sched-from" label="Desde" value={schedFrom} onChange={setFrom} />
+              <HourStepper testID="sched-to" label="Hasta" value={schedTo} onChange={setTo} />
+            </View>
+          ) : null}
+          {locPausedEff ? <T weight="semibold" style={{ fontSize: 11, color: colors.error, marginTop: spacing.sm }}>Ahora mismo NO compartes tu ubicación.</T> : null}
+        </Animated.View>
+      ) : null}
 
       {/* Layers picker (floating, does not cover the map) */}
       {layersOpen ? (
@@ -366,6 +452,21 @@ function Tool({ icon, label, onPress, testID, primary }: { icon: string; label: 
   return <Pressable testID={testID} onPress={onPress} style={[s.tool, primary && s.toolOn]}><Ionicons name={icon as any} size={15} color={fg} /><T weight="semibold" style={{ fontSize: 12, color: fg }} numberOfLines={1}>{label}</T></Pressable>;
 }
 
+function HourStepper({ label, value, onChange, testID }: { label: string; value: number; onChange: (v: number) => void; testID: string }) {
+  const { colors } = useTheme();
+  const btn = { width: 34, height: 34, borderRadius: 17, alignItems: "center" as const, justifyContent: "center" as const, backgroundColor: colors.surfaceTertiary, borderWidth: 1, borderColor: colors.border };
+  return (
+    <View style={{ alignItems: "center", gap: 4 }} testID={testID}>
+      <T style={{ fontSize: 11, color: colors.muted }}>{label}</T>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+        <Pressable testID={`${testID}-minus`} onPress={() => onChange(value - 1)} style={btn}><Ionicons name="remove" size={18} color={colors.onSurface} /></Pressable>
+        <T weight="bold" style={{ fontSize: 16, minWidth: 52, textAlign: "center" }}>{String(value).padStart(2, "0")}:00</T>
+        <Pressable testID={`${testID}-plus`} onPress={() => onChange(value + 1)} style={btn}><Ionicons name="add" size={18} color={colors.onSurface} /></Pressable>
+      </View>
+    </View>
+  );
+}
+
 const useStyles = makeStyles((c) => ({
   root: { flex: 1, backgroundColor: c.mapTint },
   top: { position: "absolute", left: 0, right: 0, paddingHorizontal: spacing.md },
@@ -382,6 +483,8 @@ const useStyles = makeStyles((c) => ({
   compassBtn: { width: 46, height: 46, borderRadius: 23, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: c.border, marginBottom: spacing.sm, shadowColor: c.surfaceInverse, shadowOpacity: 0.25, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 6 },
   layerChip: { flexDirection: "row", alignItems: "center", gap: 6, height: 38, paddingHorizontal: 12, borderRadius: radius.pill, backgroundColor: c.surfaceTertiary, borderWidth: 1, borderColor: c.border },
   smallFab: { width: 44, height: 44, borderRadius: 22, backgroundColor: c.glassStrong, borderWidth: 1, borderColor: c.border, alignItems: "center", justifyContent: "center", shadowColor: c.surfaceInverse, shadowOpacity: 0.15, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 4 },
+  pillFab: { flexDirection: "row", alignItems: "center", gap: 4, height: 44, paddingHorizontal: 12, borderRadius: 22, backgroundColor: c.glassStrong, borderWidth: 1, borderColor: c.border, shadowColor: c.surfaceInverse, shadowOpacity: 0.15, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 4 },
+  availRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingVertical: 8, borderBottomWidth: 1, borderColor: c.divider },
   fabOn: { backgroundColor: c.brandPrimary, borderColor: c.brandPrimary },
   fabBadge: { position: "absolute", top: -2, right: -2, minWidth: 16, height: 16, borderRadius: 8, backgroundColor: c.warning, alignItems: "center", justifyContent: "center", paddingHorizontal: 3 },
   sosWrap: { position: "absolute", left: 0, right: 0, alignItems: "center" },

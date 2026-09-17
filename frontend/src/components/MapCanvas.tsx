@@ -28,7 +28,7 @@ const LIGHT_STYLE = [
   { featureType: "poi", stylers: [{ visibility: "off" }] },
 ];
 
-export function MapCanvas({ people, pins = [], polyline, onPersonPress, center, zoomDelta = 0.01, onMapPress, onMapLongPress, onUserPan, selected, traffic, incidents = [], onIncidentPress, pitch3d = 50, followMode = "off", deviceHeading = 0, onHeadingChange }: MapCanvasProps) {
+export function MapCanvas({ people, pins = [], polyline, onPersonPress, center, zoomDelta = 0.005, onMapPress, onMapLongPress, onUserPan, selected, traffic, incidents = [], onIncidentPress, pitch3d = 55, followMode = "off", deviceHeading = 0, onHeadingChange }: MapCanvasProps) {
   const { scheme, colors } = useTheme();
   const ref = useRef<MapView>(null);
   const tiles = `${BASE}/mobility/tiles`;
@@ -52,7 +52,7 @@ export function MapCanvas({ people, pins = [], polyline, onPersonPress, center, 
   return (
     <View style={{ flex: 1, backgroundColor: colors.mapTint }} testID="map-canvas">
       <MapView ref={ref} style={{ flex: 1 }} customMapStyle={scheme === "dark" ? DARK_STYLE : LIGHT_STYLE} userInterfaceStyle={scheme}
-        initialCamera={{ center: { latitude: c.lat, longitude: c.lng }, pitch: pitch3d, heading: 0, zoom: Math.log2(360 / (center ? zoomDelta : 0.06)), altitude: 1200 }}
+        initialCamera={{ center: { latitude: c.lat, longitude: c.lng }, pitch: pitch3d, heading: 0, zoom: Math.log2(360 / (center ? zoomDelta : 0.02)), altitude: 800 }}
         showsBuildings pitchEnabled rotateEnabled showsCompass={false} toolbarEnabled={false} showsMyLocationButton={false}
         onRegionChangeComplete={onHeadingChange ? reportHeading : undefined}
         onPress={(e) => { if ((e.nativeEvent as any).action === "marker-press") return; onMapPress?.(coord(e)); }}

@@ -8,7 +8,10 @@ import { api } from "@/src/api";
 
 export type LocPermState = "unknown" | "granted" | "denied" | "blocked";
 
-export function useLocationSharing(enabled: boolean) {
+export function useLocationSharing(enabled: boolean, opts?: { refreshSec?: number; paused?: boolean }) {
+  const refreshSec = Math.max(5, Math.min(opts?.refreshSec ?? 10, 900));
+  const paused = !!opts?.paused;
+  const active = enabled && !paused;
   const [perm, setPerm] = useState<LocPermState>("unknown");
   const [lastSentAt, setLastSentAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -32,12 +35,13 @@ export function useLocationSharing(enabled: boolean) {
   useEffect(() => { check(); }, [check]);
 
   useEffect(() => {
-    if (!enabled || perm !== "granted") { sub.current?.remove(); sub.current = null; return; }
+    if (!active || perm !== "granted") { sub.current?.remove(); sub.current = null; return; }
     let cancelled = false;
+    const gap = refreshSec * 1000;
     (async () => {
       try {
-        sub.current = await Location.watchPositionAsync({ accuracy: Location.Accuracy.Balanced, timeInterval: 10000, distanceInterval: 15 }, async (loc) => {
-          if (cancelled || Date.now() - lastPost.current < 8000) return;
+        sub.current = await Location.watchPositionAsync({ accuracy: Location.Accuracy.Balanced, timeInterval: gap, distanceInterval: 15 }, async (loc) => {
+          if (cancelled || Date.now() - lastPost.current < gap - 1500) return;
           lastPost.current = Date.now();
           const speed = loc.coords.speed ?? null;
           try {
@@ -51,7 +55,7 @@ export function useLocationSharing(enabled: boolean) {
       } catch (e: any) { setError(Platform.OS === "web" ? "Ubicación no disponible en este navegador" : e?.message); }
     })();
     return () => { cancelled = true; sub.current?.remove(); sub.current = null; };
-  }, [enabled, perm]);
+  }, [active, perm, refreshSec]);
 
-  return { perm, request, check, openSettings, lastSentAt, error };
+  return { perm, request, check, openSettings, lastSentAt, error, refreshSec, paused };
 }

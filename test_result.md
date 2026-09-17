@@ -150,3 +150,12 @@ frontend:
   - GroupsBar.tsx: chips horizontales arriba (nombre · X miembros · Y en línea · Z avisos, punto rojo pulsante si hay avisos). testID groups-bar, group-chip-{id}. Sustituye al carril izquierdo GroupsRail en el mapa.
   - map.tsx: botón de ubicación (testID fab-recenter) tipo Google con 3 estados: off=locate-outline (recentrar), follow=locate relleno (tocar→heading), heading=compass (mapa gira con la brújula del teléfono). onUserPan→followMode "off". Botón brújula (testID fab-compass) aparece cuando el mapa está rotado (mapHeading≠0)→orienta al norte. UserCard y MemberRail bajados para dejar sitio a los chips.
   - MapCanvas.tsx (NATIVO): props followMode/deviceHeading/onHeadingChange; anima cámara a heading del dispositivo (expo-location watchHeadingAsync) en modo heading; reporta rotación con getCamera en onRegionChangeComplete. (Brújula/heading SOLO nativo, no verificable en web.)
+
+## Iteration 9 (2026-06) — Cabecera de estado + controles de localización (respuesta a "me veo 3 veces")
+Decisión del usuario: mantener cabecera y tarjeta derecha, pero la cabecera deja de mostrar el NOMBRE DEL GRUPO y muestra su ESTADO.
+frontend (map.tsx, useLocationSharing.ts, MapCanvas.tsx):
+  - Cabecera (testID top-bar): sub-línea ahora = testID "bar-status" con ubicación (reverse de myPos) + batería (useBattery) + campana de notificaciones (nº de tareas si >0). Ya NO muestra el nombre del grupo. Quitado estado "greet".
+  - Botón intervalo de refresco (testID fab-refresh, muestra "{n}s") → panel (testID refresh-panel) con chips refresh-5/10/30/60/120/300 (segundos entre envíos de posición, ahorro de batería). Persistido en storage sentinel.loc.refreshSec.
+  - Botón disponibilidad (testID fab-availability) → panel (testID availability-panel): toggle-pause (Desactivar localización ahora) y toggle-schedule (Solo localizable en horario) con HourStepper sched-from/sched-to (00-23). Persistido. locPausedEff = locPaused || (schedOn && fuera de horario) → se pasa a useLocationSharing({refreshSec, paused}) que corta el envío de posición.
+  - useLocationSharing ahora acepta {refreshSec, paused}; timeInterval/throttle = refreshSec*1000; no envía si paused.
+  - MapCanvas: zoom inicial más cercano (~6 manzanas): zoomDelta por defecto 0.005, no-center 0.02, pitch 55, avatar propio anclado en 3D (NATIVO).

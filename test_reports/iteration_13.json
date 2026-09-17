@@ -1,0 +1,30 @@
+{
+  "summary": "Frontend-only iteration 13: verified refactor of /map top-bar and new refresh/availability FABs for Ana. All 6 test blocks pass. Header (top-bar) no longer shows the group name (only user Ana + bar-status with location='Sin ubicación' + battery% + notifications badge). Group name 'Grupo 1' is shown ONLY in groups-bar/group-chip below. fab-refresh initially shows '10s'; opening refresh-panel and tapping refresh-30 updates the pill to '30s'; setting persists across full page reload (AsyncStorage). fab-availability opens availability-panel with toggle-pause and toggle-schedule; enabling schedule shows HourStepper sched-from/sched-to with -plus/-minus; enabling pause displays the red 'Ahora mismo NO compartes tu ubicación.' warning. Regression clean: fab-recenter, fab-layers→layers-panel→layer-pharmacy, fab-sos→sos-panel, member-rect→member-tools-sheet, group-chip taps navigate to /group/{id}. No red screens, no critical console errors (401s belong to unauthenticated /permissions polling before token was ready and self-resolve). Native-only expectations (avatar 3D anchor / ~6-block zoom) intentionally NOT verified per request. Minor RN deprecation warnings detected: shadow* props and pointerEvents prop (see react_native_issues).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "styles across map.tsx & children", "issue": "React Native Web warns: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' Multiple styles use shadowColor/shadowOpacity/shadowRadius/shadowOffset (e.g. /app/frontend/app/map.tsx:473,482,483,485,486,491,493,498). Consider migrating to boxShadow for RN 0.76+/RNW compatibility."},
+      {"component": "Animated.View pointerEvents prop", "issue": "'props.pointerEvents is deprecated. Use style.pointerEvents.' Reference: /app/frontend/app/map.tsx:213,265,271 (pointerEvents={hidden ? 'none' : 'box-none'} on Animated.View)."}
+    ]
+  },
+  "test_report_links": ["/app/test_reports/iteration_13.json"],
+  "action_items": [
+    "Optional: migrate shadow* style keys to boxShadow across map.tsx and other components to silence RN Web deprecation warnings (cosmetic).",
+    "Optional: move pointerEvents from prop to style on Animated.View instances (map.tsx L213/265/271)."
+  ],
+  "critical_code_review_comments": [
+    "map.tsx is 500 lines — approaching split threshold. Consider extracting RefreshPanel, AvailabilityPanel and HourStepper into /src/components to keep the screen focused.",
+    "storage.setItem calls in setRefresh/togglePause/toggleSched/setFrom/setTo are fire-and-forget (no await/catch). If storage fails silently the UI still updates. Acceptable for AsyncStorage but consider a debug log on rejection.",
+    "withinSchedule uses hourNow from `new Date().getHours()` computed once per render — will not react to hour crossing while panel is open. Low priority."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "not_tested", "frontend": "100% (26/26 checks)"},
+  "seed_data_creation": "None. Used seeded Ana account (ana.demo@sentinelfamily.app).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Ana's group id is 6a9b12a55e9a54ed597ae8f8 ('Grupo 1', 3 members incl. Luis expired invite). Web preview lacks GPS, so bar-status shows 'Sin ubicación' and battery=100% (charging). Native-only features (3D avatar anchor, ~6-block zoom) explicitly out of scope for web preview per request. Playwright script used: /tmp/test_map_iter13.py (inline in browser_automation call).",
+  "rca_of_issue": "N/A — no bugs found this iteration."
+}

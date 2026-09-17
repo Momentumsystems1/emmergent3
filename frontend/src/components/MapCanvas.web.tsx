@@ -1,4 +1,4 @@
-// Web renderer: react-native-maps has no web build, so we render a REAL Azure Maps static image (proxied by the backend)
+// Web renderer: react-native-maps has no web build, so we render a REAL Mapbox static image (proxied by the backend)
 // and project people / incidents on top with Web-Mercator math. Tap → coordinate (so point selection works on web too).
 // Zoom buttons; no panning (static image). Traffic flow tiles are native-only (static API renders one tileset).
 import Ionicons from "@react-native-vector-icons/ionicons";
@@ -48,7 +48,7 @@ export function MapCanvas({ people, pins = [], polyline, onPersonPress, center, 
     <Pressable style={s.root} testID="map-canvas" onLayout={(e) => setSize({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}
       onPress={(e) => onMapPress?.(at(e))} onLongPress={(e) => onMapLongPress?.(at(e))}>
       {uri ? <Image source={{ uri }} style={{ position: "absolute", left: 0, top: 0, width: size.w, height: size.h }} onLoad={() => setLoaded(true)} onError={() => setLoaded(false)} testID="map-static-image" /> : null}
-      {!loaded ? <View style={s.loading} pointerEvents="none"><Text style={s.noticeTxt}>Cargando mapa Azure…</Text></View> : null}
+      {!loaded ? <View style={s.loading} pointerEvents="none"><Text style={s.noticeTxt}>Cargando mapa…</Text></View> : null}
       {incidents.filter((i) => inView(i.lat, i.lng)).map((i) => (
         <Pressable key={i.id} testID={`map-incident-${i.id}`} onPress={() => onIncidentPress?.(i)} style={[s.abs, proj(i.lat, i.lng), { marginLeft: -13, marginTop: -13 }]}>
           <View style={[s.inc, { backgroundColor: i.road_closed ? colors.error : colors.warning }]}><Ionicons name={incidentIcon(i) as any} size={14} color={i.road_closed ? colors.onError : colors.onWarning} /></View>
@@ -64,7 +64,7 @@ export function MapCanvas({ people, pins = [], polyline, onPersonPress, center, 
         <Pressable testID="map-zoom-in" onPress={() => setView((v) => ({ ...v, zoom: Math.min(19, v.zoom + 1) }))} style={s.zBtn}><Ionicons name="add" size={18} color={colors.onSurface} /></Pressable>
         <Pressable testID="map-zoom-out" onPress={() => setView((v) => ({ ...v, zoom: Math.max(3, v.zoom - 1) }))} style={s.zBtn}><Ionicons name="remove" size={18} color={colors.onSurface} /></Pressable>
       </View>
-      <View style={s.notice} pointerEvents="none" testID="map-web-notice"><Ionicons name="map" size={12} color={colors.muted} /><Text style={s.noticeTxt}>Azure Maps · vista estática (web)</Text></View>
+      <View style={s.notice} pointerEvents="none" testID="map-web-notice"><Ionicons name="map" size={12} color={colors.muted} /><Text style={s.noticeTxt}>Mapbox · vista estática (web)</Text></View>
     </Pressable>
   );
 }

@@ -29,6 +29,8 @@ export type MapCanvasProps = {
   followMode?: "off" | "follow" | "heading";
   /** Device compass heading (deg) used when followMode === "heading". Native only. */
   deviceHeading?: number;
+  /** Fit the camera to enclose these coordinates (e.g. the whole group). Native. */
+  fit?: { coords: LatLng[]; key: number };
   /** Reports the map's current rotation so the caller can show a compass. Native only. */
   onHeadingChange?: (heading: number) => void;
 };

@@ -1,0 +1,31 @@
+{
+  "summary": "Frontend-only verification of the demo polish pass on /map + /navigate for Sentinel Family. All 7 acceptance items PASS with Ana's account (ana.demo@sentinelfamily.app). (1) Login → /map renders map-home with no red screen. (2) Legacy standalone FABs are gone: fab-privacy, fab-traffic, fab-layers, fab-refresh, fab-availability and fab-compass all return null. A single fab-tools exists bottom-left; tapping it opens tools-menu containing tool-privacy, tool-traffic, tool-layers, tool-refresh, tool-availability. (3) Each tool item works and closes tools-menu when opening its panel: tool-layers→layers-panel (layer-pharmacy toggles), tool-refresh→refresh-panel (refresh-30 changes label to 'Refresco · 30s'), tool-availability→availability-panel (toggle-pause + toggle-schedule visible), tool-privacy→sharing panel, tool-traffic→traffic-panel with tools-menu closed. (4) GROUP/RADIO: pulsar group-chip-<id> (GroupsBar exposes testID `group-chip-{id}`, not `group-chip`) triggers fitGroup and the badge testID='group-radius' appears with the enclosing radius (observed '50 m' for Ana's 3-member group centered in Madrid). (5) fab-recenter exists (large, left-center); fab-compass NOT present. (6) /navigate mode-transit → unavailable-sheet with unavailable-title showing 'Próximamente' (not 'SERVICIO NO CONFIGURADO') — the ui.tsx sheet forces the title to 'Próximamente' unless the payload is a plan-required upgrade. (7) Regression: location-permission-banner is hidden when browser geolocation is granted; member-rect→member-tools-sheet works; fab-sos→sos-panel works. No red screens; only pre-existing RN Web deprecation warnings (shadow*/pointerEvents).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "styles across map.tsx & children", "issue": "React Native Web warns: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' Multiple shadowColor/shadowOpacity/shadowRadius/shadowOffset usages. Reference: /app/frontend/app/map.tsx:475,484,485,486,487,489,490,495,502 (carryover from iteration 13/14)."},
+      {"component": "Animated.View pointerEvents prop", "issue": "'props.pointerEvents is deprecated. Use style.pointerEvents.' Reference: /app/frontend/app/map.tsx:208,260,266 (carryover from iteration 13/14)."}
+    ]
+  },
+  "test_report_links": ["/app/test_reports/iteration_15.json"],
+  "action_items": [
+    "None functional — all requested demo-polish items are verified. Optional cosmetic: migrate shadow* → boxShadow and Animated.View props.pointerEvents → style.pointerEvents (carryover).",
+    "Doc nit for future testing agents: the group chip testID is `group-chip-{group_id}` (from GroupsBar.tsx line 22), not a bare `group-chip`. The review request's shorthand still resolves via prefix selector `[data-testid^=\"group-chip-\"]`."
+  ],
+  "critical_code_review_comments": [
+    "map.tsx: consolidation is clean — a single fab-tools with `toolsOpen` state gates the FadeInDown tools-menu; closeAll() is invoked before each panel open so at most one panel is visible and tools-menu is dismissed when a panel takes over. Nice.",
+    "map.tsx line 122: banner logic still correct (`if (loc.perm === 'granted') setLocBanner(false)`), and the render also guards with `loc.perm !== 'granted'`. Regression-safe.",
+    "ui.tsx line 109: `<Text testID='unavailable-title'>{isPlan ? d?.title : 'Próximamente'}</Text>` — 'SERVICIO NO CONFIGURADO' titles from callers (e.g. navigate.tsx mode-transit still passes it) are intentionally overridden by the sheet, which is exactly what the demo brief requested. Consider removing the now-unused SERVICE_NOT_CONFIGURED titles from call sites (navigate.tsx:117, and any anti-congestion strings) to avoid confusion.",
+    "map.tsx is 505 lines — still under 700-line split threshold; consider extracting Refresh/Availability/Layers/Tools panels to /src/components (carryover)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "not_tested", "frontend": "100% (7/7 acceptance items)"},
+  "seed_data_creation": "None. Used seeded Ana account (ana.demo@sentinelfamily.app / Sentinel2026!) with pre-existing 'Grupo 1' (3 members, 1 pending invite).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "For the group radius test: use the prefix selector `[data-testid^=\"group-chip-\"]` (real testID is `group-chip-{group_id}` from GroupsBar.tsx). On web preview the actual map fitToCoordinates does NOT visually re-frame (MapCanvas.web.tsx is a static image), but the badge testID='group-radius' correctly renders — that's the spec. Grant geolocation BEFORE loading /map (context.grant_permissions(['geolocation'], origin=BASE) + set_geolocation Madrid) to hide the permission banner. mode-transit lives on /navigate and requires a destination in the query (?lat=&lng=&place=) for the mode chip strip to render.",
+  "rca_of_issue": "N/A (feature-verification pass, no bugs)."
+}

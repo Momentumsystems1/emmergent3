@@ -28,7 +28,7 @@ const LIGHT_STYLE = [
   { featureType: "poi", stylers: [{ visibility: "off" }] },
 ];
 
-export function MapCanvas({ people, pins = [], polyline, onPersonPress, center, zoomDelta = 0.005, onMapPress, onMapLongPress, onUserPan, selected, traffic, incidents = [], onIncidentPress, pitch3d = 55, followMode = "off", deviceHeading = 0, onHeadingChange }: MapCanvasProps) {
+export function MapCanvas({ people, pins = [], polyline, onPersonPress, center, zoomDelta = 0.005, onMapPress, onMapLongPress, onUserPan, selected, traffic, incidents = [], onIncidentPress, pitch3d = 55, followMode = "off", deviceHeading = 0, fit, onHeadingChange }: MapCanvasProps) {
   const { scheme, colors } = useTheme();
   const ref = useRef<MapView>(null);
   const tiles = `${BASE}/mobility/tiles`;
@@ -48,6 +48,14 @@ export function MapCanvas({ people, pins = [], polyline, onPersonPress, center, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deviceHeading, followMode, me?.lat, me?.lng]);
   const coord = (e: any) => ({ lat: e.nativeEvent.coordinate.latitude, lng: e.nativeEvent.coordinate.longitude });
+  // Fit the whole group into view (zoom out to enclose everyone).
+  useEffect(() => {
+    if (fit && fit.coords.length) {
+      if (fit.coords.length === 1) ref.current?.animateCamera({ center: { latitude: fit.coords[0].lat, longitude: fit.coords[0].lng }, pitch: pitch3d, heading: 0, zoom: Math.log2(360 / 0.02) }, { duration: 600 });
+      else ref.current?.fitToCoordinates(fit.coords.map((c2) => ({ latitude: c2.lat, longitude: c2.lng })), { edgePadding: { top: 160, right: 90, bottom: 220, left: 90 }, animated: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fit?.key]);
   const reportHeading = async () => { try { const cam = await ref.current?.getCamera(); onHeadingChange?.(cam?.heading ?? 0); } catch { /* noop */ } };
   return (
     <View style={{ flex: 1, backgroundColor: colors.mapTint }} testID="map-canvas">

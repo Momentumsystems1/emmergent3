@@ -1,0 +1,29 @@
+{
+  "summary": "Frontend-only regression + bug fix verification for the location-permission banner on /map (useLocationSharing + map.tsx). Bug is FIXED. Verified 3 scenarios with Playwright driving the browser permission API: (1) With geolocation GRANTED before the map loads (context.grant_permissions(['geolocation']) + set_geolocation Madrid), /map shows NO 'location-permission-banner' (query returns None); the top bar shows 'Madrid 100%' and Ana's blue dot is placed on Madrid. (2) After ctx.clear_permissions() + reload, banner reappears (as expected) with the 'location-request' 'Permitir' button (state='prompt', not 'blocked' → no 'location-open-settings'). (3) After granting again at the browser level and tapping 'Permitir', the banner is hidden and does NOT come back — confirming the fix that useLocationSharing.request() short-circuits when getForegroundPermissionsAsync().granted is already true, and that the map effect (`if (loc.perm === 'granted') setLocBanner(false)`) closes the banner. Regression clean: map-home renders, groups-bar/group-chip (Grupo 1) visible, fab-recenter, fab-layers→layers-panel, fab-availability→availability-panel, fab-refresh→refresh-panel, fab-sos→sos-panel all work; no red screens; no critical console errors (only harmless 401s during the reload window before the JWT is rehydrated, plus pre-existing RN Web deprecation warnings for shadow*/pointerEvents).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "styles across map.tsx & children", "issue": "React Native Web warns: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' Multiple shadowColor/shadowOpacity/shadowRadius/shadowOffset usages. Reference: /app/frontend/app/map.tsx:473,482,483,485,486,491,493,498 (carryover from iteration 13)."},
+      {"component": "Animated.View pointerEvents prop", "issue": "'props.pointerEvents is deprecated. Use style.pointerEvents.' Reference: /app/frontend/app/map.tsx:213,265,271 (carryover from iteration 13)."}
+    ]
+  },
+  "test_report_links": ["/app/test_reports/iteration_14.json"],
+  "action_items": [
+    "Bug fix verified — no code changes required. Optional: migrate shadow* props to boxShadow and Animated.View pointerEvents prop to style.pointerEvents to silence RN Web deprecation warnings (cosmetic, carried over)."
+  ],
+  "critical_code_review_comments": [
+    "useLocationSharing.ts is well-structured: AppState 'active' listener + try/catch on check()/request() correctly recover a stale banner when the user grants permission via the system settings. request() early-return on already-granted avoids the platform prompt loop.",
+    "map.tsx line 121: `if (loc.perm === 'granted') setLocBanner(false); else if (sharesLocation) setLocBanner(true);` — correct. The banner render also guards with `loc.perm !== 'granted'` (line 236), so a granted perm can never leave a lingering banner.",
+    "map.tsx is now 500 lines — still under the 700-line split threshold but growing; consider extracting Refresh/Availability/Layers panels into /src/components (carryover from iteration 13)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "not_tested", "frontend": "100% (3/3 permission scenarios + 6/6 regression FABs)"},
+  "seed_data_creation": "None. Used seeded Ana account (ana.demo@sentinelfamily.app / Sentinel2026!).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "To verify the location permission banner behavior in Playwright, grant browser geolocation BEFORE opening the map (context.grant_permissions(['geolocation'], origin=BASE) + context.set_geolocation({lat,lng})). Reload after clear_permissions() to trigger a fresh perm check. Native background/locked-screen location + PiP are out of scope for web preview. Ana's group 'Grupo 1' has 3 members with 1 pending invite; that is unrelated to this bug.",
+  "rca_of_issue": "Original bug: invited members saw the 'activate device geolocation permission' banner even after granting location; banner didn't dismiss. Root cause was two-fold: (a) useLocationSharing only checked permission on mount, so re-granting via the system settings never updated `perm` from 'denied' → 'granted'; (b) request() blindly called requestForegroundPermissionsAsync() even when the OS already reported 'granted', which on some platforms returns undetermined and left the state stuck. Fix (verified): (1) AppState 'active' listener re-runs check() when the app returns to foreground; (2) request() first calls getForegroundPermissionsAsync() and short-circuits to setPerm('granted') when already granted; (3) map.tsx forces setLocBanner(false) whenever loc.perm === 'granted' and the render itself gates on `loc.perm !== 'granted'`. Playwright reproduction: pre-granting geolocation + loading /map now shows no banner (previously always shown); revoking + reloading correctly re-shows the banner; tapping 'Permitir' hides it and it stays hidden."
+}

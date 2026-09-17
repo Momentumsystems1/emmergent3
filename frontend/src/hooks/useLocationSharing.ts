@@ -2,7 +2,7 @@
 // position upload only when the user has an effective location-sharing permission.
 import * as Location from "expo-location";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Linking, Platform } from "react-native";
+import { AppState, Linking, Platform } from "react-native";
 
 import { api } from "@/src/api";
 
@@ -19,20 +19,32 @@ export function useLocationSharing(enabled: boolean, opts?: { refreshSec?: numbe
   const lastPost = useRef(0);
 
   const check = useCallback(async () => {
-    const p = await Location.getForegroundPermissionsAsync();
-    setPerm(p.granted ? "granted" : p.canAskAgain ? (p.status === "undetermined" ? "unknown" : "denied") : "blocked");
-    return p;
+    try {
+      const p = await Location.getForegroundPermissionsAsync();
+      setPerm(p.granted ? "granted" : p.canAskAgain ? (p.status === "undetermined" ? "unknown" : "denied") : "blocked");
+      return p;
+    } catch { return null; }
   }, []);
 
   const request = useCallback(async () => {
-    const p = await Location.requestForegroundPermissionsAsync();
-    setPerm(p.granted ? "granted" : p.canAskAgain ? "denied" : "blocked");
-    return p.granted;
+    try {
+      const cur = await Location.getForegroundPermissionsAsync();
+      if (cur.granted) { setPerm("granted"); return true; }
+      const p = await Location.requestForegroundPermissionsAsync();
+      setPerm(p.granted ? "granted" : p.canAskAgain ? "denied" : "blocked");
+      return p.granted;
+    } catch { return false; }
   }, []);
 
   const openSettings = useCallback(() => { Linking.openSettings().catch(() => null); }, []);
 
-  useEffect(() => { check(); }, [check]);
+  // Check on mount AND every time the app returns to the foreground (e.g. after the user enabled the permission in
+  // system Settings) so a stale "grant location" banner never lingers once the permission is actually granted.
+  useEffect(() => {
+    check();
+    const s = AppState.addEventListener("change", (st) => { if (st === "active") check(); });
+    return () => s.remove();
+  }, [check]);
 
   useEffect(() => {
     if (!active || perm !== "granted") { sub.current?.remove(); sub.current = null; return; }
@@ -40,7 +52,7 @@ export function useLocationSharing(enabled: boolean, opts?: { refreshSec?: numbe
     const gap = refreshSec * 1000;
     (async () => {
       try {
-        sub.current = await Location.watchPositionAsync({ accuracy: Location.Accuracy.Balanced, timeInterval: gap, distanceInterval: 15 }, async (loc) => {
+        sub.current = await Location.watchPositionAsync({ accuracy: Location.Accuracy.High, timeInterval: gap, distanceInterval: 8 }, async (loc) => {
           if (cancelled || Date.now() - lastPost.current < gap - 1500) return;
           lastPost.current = Date.now();
           const speed = loc.coords.speed ?? null;

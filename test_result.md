@@ -159,3 +159,21 @@ frontend (map.tsx, useLocationSharing.ts, MapCanvas.tsx):
   - Botón disponibilidad (testID fab-availability) → panel (testID availability-panel): toggle-pause (Desactivar localización ahora) y toggle-schedule (Solo localizable en horario) con HourStepper sched-from/sched-to (00-23). Persistido. locPausedEff = locPaused || (schedOn && fuera de horario) → se pasa a useLocationSharing({refreshSec, paused}) que corta el envío de posición.
   - useLocationSharing ahora acepta {refreshSec, paused}; timeInterval/throttle = refreshSec*1000; no envía si paused.
   - MapCanvas: zoom inicial más cercano (~6 manzanas): zoomDelta por defecto 0.005, no-center 0.02, pitch 55, avatar propio anclado en 3D (NATIVO).
+
+## Iteration 10 (2026-06) — BUG: aviso de "activa la geolocalización" persiste aunque el miembro la tiene concedida
+Causa raíz: useLocationSharing solo comprobaba el permiso una vez al montar y check() no tenía try/catch → si el miembro concedía el permiso (o volvía de Ajustes) la app no re-comprobaba y el aviso se quedaba.
+Fix (src/hooks/useLocationSharing.ts):
+  - check() con try/catch (un fallo ya no deja perm "unknown" atascado).
+  - request() comprueba primero si ya está concedido (evita re-preguntar y marca granted al instante).
+  - Re-comprobación con AppState 'active' (al volver la app a primer plano tras conceder en Ajustes).
+  - Precisión subida a Location.Accuracy.High (~5-20 m) en watchPositionAsync y getCurrentPositionAsync.
+map.tsx: el banner se oculta en cuanto loc.perm === "granted" (efecto actualizado).
+
+## Iteration 11 (2026-06) — Pulido "App Store": un solo botón de herramientas, quitar brújula, encuadrar grupo + radio, tarjetas semitransparentes, "Próximamente"
+frontend (map.tsx, MapCanvas.tsx, ui.tsx):
+  - Herramientas consolidadas en UN botón redondo (testID fab-tools) → menú glass (testID tools-menu) con tool-privacy/tool-traffic/tool-layers/tool-refresh/tool-availability. Se eliminaron los FABs sueltos.
+  - Quitada la brújula (fab-compass) y el modo heading (la brújula "no funciona"): botón de ubicación (fab-recenter) solo off/follow.
+  - "Pulsar el círculo" (group-chip) → fitGroup(): MapCanvas prop `fit` (fitToCoordinates) encuadra a todos los miembros localizados + badge testID group-radius con el radio en km (NATIVO el encuadre; badge visible en web).
+  - Tarjetas del mapa más semitransparentes (s.selCard usa c.glass).
+  - UnavailableHost (ui.tsx): features no configuradas (V16, cámara, transporte público) ahora se muestran como "Próximamente" (no "SERVICIO NO CONFIGURADO") para la demo con inversores.
+  - GPS a Accuracy.High (iteración 10).

@@ -65,9 +65,10 @@ export default function MapHome() {
   const [hidden, setHidden] = useState(false);
   const [layersOpen, setLayersOpen] = useState(false);
   const [layers, setLayers] = useState<string[]>([]);
-  const [followMode, setFollowMode] = useState<"off" | "follow" | "heading">("off");
-  const [deviceHeading, setDeviceHeading] = useState(0);
-  const [mapHeading, setMapHeading] = useState(0);
+  const [followMode, setFollowMode] = useState<"off" | "follow">("off");
+  const [fit, setFit] = useState<{ coords: LatLng[]; key: number } | undefined>();
+  const [radiusKm, setRadiusKm] = useState<number | null>(null);
+  const [toolsOpen, setToolsOpen] = useState(false);
   const [refreshSec, setRefreshSec] = useState(10);
   const [locPaused, setLocPaused] = useState(false);
   const [schedOn, setSchedOn] = useState(false);
@@ -118,12 +119,12 @@ export default function MapHome() {
     setSchedTo((await storage.getItem<number>("sentinel.loc.schedTo", 22)) ?? 22);
   })(); }, []);
   useEffect(() => { storage.getItem<string | null>("sentinel.pending_invite", null).then((t) => { if (t) router.push(`/invite/${t}`); }); }, [router]);
-  useEffect(() => { if (sharesLocation && loc.perm !== "granted") setLocBanner(true); }, [sharesLocation, loc.perm]);
+  useEffect(() => { if (loc.perm === "granted") setLocBanner(false); else if (sharesLocation) setLocBanner(true); }, [sharesLocation, loc.perm]);
   useEffect(() => { if (loc.lastSentAt) qc.invalidateQueries({ queryKey: ["positions"] }); }, [loc.lastSentAt, qc]);
   // Device position (stays on the device unless a location permission is effective) → centering + navigation origin.
   useEffect(() => {
     if (loc.perm !== "granted") return;
-    Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }).then((p) => setMyPos({ lat: p.coords.latitude, lng: p.coords.longitude })).catch(() => null);
+    Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High }).then((p) => setMyPos({ lat: p.coords.latitude, lng: p.coords.longitude })).catch(() => null);
   }, [loc.perm]);
 
   const served = positions.data ?? [];
@@ -137,32 +138,28 @@ export default function MapHome() {
   // one-shot centering on the first GPS fix
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { if (mePos && !focus) { setFocus({ lat: mePos.lat, lng: mePos.lng, key: 1 }); setFollowMode("follow"); } }, [mePos?.lat, mePos?.lng, focus]);
-  // Compass: subscribe to the device heading only while in "heading" mode.
-  useEffect(() => {
-    if (followMode !== "heading") return;
-    let sub: any;
-    Location.watchHeadingAsync((h) => setDeviceHeading(Math.round(h.trueHeading >= 0 ? h.trueHeading : h.magHeading))).then((s) => { sub = s; }).catch(() => {});
-    return () => sub?.remove?.();
-  }, [followMode]);
 
-  const closeAll = () => { setSel(null); setMemberSel(null); setSharing(false); setTrafficPanel(false); setIncSel(null); setUserOpen(false); setSosOpen(false); setLayersOpen(false); setRefreshOpen(false); setAvailOpen(false); };
-  const anyOpen = !!sel || !!memberSel || sharing || trafficPanel || !!incSel || userOpen || sosOpen || layersOpen || refreshOpen || availOpen || (locBanner && loc.perm !== "granted");
+  const closeAll = () => { setSel(null); setMemberSel(null); setSharing(false); setTrafficPanel(false); setIncSel(null); setUserOpen(false); setSosOpen(false); setLayersOpen(false); setRefreshOpen(false); setAvailOpen(false); setToolsOpen(false); };
+  const anyOpen = !!sel || !!memberSel || sharing || trafficPanel || !!incSel || userOpen || sosOpen || layersOpen || refreshOpen || availOpen || toolsOpen || (locBanner && loc.perm !== "granted");
   const setRefresh = (v: number) => { setRefreshSec(v); storage.setItem("sentinel.loc.refreshSec", v); };
   const togglePause = () => { setLocPaused((p) => { const n = !p; storage.setItem("sentinel.loc.paused", n); return n; }); };
   const toggleSched = () => { setSchedOn((p) => { const n = !p; storage.setItem("sentinel.loc.schedOn", n); return n; }); };
   const setFrom = (v: number) => { const h = (v + 24) % 24; setSchedFrom(h); storage.setItem("sentinel.loc.schedFrom", h); };
   const setTo = (v: number) => { const h = (v + 24) % 24; setSchedTo(h); storage.setItem("sentinel.loc.schedTo", h); };
   const onMapPress = (c?: LatLng) => { setHidden(false); if (anyOpen) { closeAll(); setLocBanner(false); return; } if (c) setSel(c); };
-  const recenter = () => { setHidden(false); closeAll(); if (!mePos) { toast(loc.perm === "granted" ? "Obteniendo tu ubicación…" : "Permite la ubicación para centrarte"); if (loc.perm !== "granted") setLocBanner(true); return; } setFollowMode("follow"); setFocus({ ...mePos, key: (focus?.key ?? 0) + 1 }); };
-  // Google-Maps-style location button: off → recenter (follow, north-up); follow → tap again → heading (map points where the phone points); heading → back to follow.
-  const onLocate = () => {
-    if (!mePos) return recenter();
-    if (followMode === "follow") { setHidden(false); setFollowMode("heading"); return; }
-    if (followMode === "heading") { setHidden(false); setFollowMode("follow"); setFocus({ ...mePos, key: (focus?.key ?? 0) + 1 }); return; }
-    recenter();
+  const recenter = () => { setHidden(false); closeAll(); if (!mePos) { toast(loc.perm === "granted" ? "Obteniendo tu ubicación…" : "Permite la ubicación para centrarte"); if (loc.perm !== "granted") setLocBanner(true); return; } setFollowMode("follow"); setFit(undefined); setRadiusKm(null); setFocus({ ...mePos, key: (focus?.key ?? 0) + 1 }); };
+  const onLocate = () => { if (!mePos) return recenter(); setFollowMode("follow"); setFit(undefined); setRadiusKm(null); setHidden(false); setFocus({ ...mePos, key: (focus?.key ?? 0) + 1 }); };
+  const locateIcon = followMode === "follow" ? "locate" : "locate-outline";
+  // "Tap the circle" → zoom out to enclose the whole group and show the enclosing radius in km.
+  const fitGroup = () => {
+    setHidden(false); closeAll();
+    const coords = people.filter((p) => p.state === "shared" && p.lat != null).map((p) => ({ lat: p.lat!, lng: p.lng! }));
+    if (!coords.length) { toast("Nadie comparte ubicación todavía"); return; }
+    setFollowMode("off"); setFit({ coords, key: (fit?.key ?? 0) + 1 });
+    const cLat = coords.reduce((s, c) => s + c.lat, 0) / coords.length, cLng = coords.reduce((s, c) => s + c.lng, 0) / coords.length;
+    const km = (a: LatLng, b: LatLng) => { const R = 6371, dLat = (b.lat - a.lat) * Math.PI / 180, dLng = (b.lng - a.lng) * Math.PI / 180, la1 = a.lat * Math.PI / 180, la2 = b.lat * Math.PI / 180; const x = Math.sin(dLat / 2) ** 2 + Math.cos(la1) * Math.cos(la2) * Math.sin(dLng / 2) ** 2; return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x)); };
+    setRadiusKm(Math.max(0.05, ...coords.map((c) => km({ lat: cLat, lng: cLng }, c))));
   };
-  const resetNorth = () => { setFollowMode("follow"); if (mePos) setFocus({ ...mePos, key: (focus?.key ?? 0) + 1 }); setMapHeading(0); };
-  const locateIcon = followMode === "heading" ? "compass" : followMode === "follow" ? "locate" : "locate-outline";
   const originParams = originParamsOf(mePos);
   const poiCenter = focus ?? mePos ?? { lat: 40.4168, lng: -3.7038 };
   const poi = useQuery({
@@ -192,19 +189,17 @@ export default function MapHome() {
 
   return (
     <View style={s.root} testID="map-home">
-      <MapCanvas people={people} pins={poiPins} center={focus} selected={sel} onMapPress={onMapPress} onMapLongPress={(c) => { setHidden(false); closeAll(); setSel(c); }} onUserPan={() => { if (!anyOpen) { setHidden(true); setFollowMode("off"); } }}
-        followMode={followMode} deviceHeading={deviceHeading} onHeadingChange={setMapHeading}
+      <MapCanvas people={people} pins={poiPins} center={focus} selected={sel} fit={fit} onMapPress={onMapPress} onMapLongPress={(c) => { setHidden(false); closeAll(); setSel(c); }} onUserPan={() => { if (!anyOpen) { setHidden(true); setFollowMode("off"); } }}
+        followMode={followMode}
         traffic={traffic} incidents={traffic ? incidents.data ?? [] : []} onIncidentPress={(i) => { setHidden(false); closeAll(); setIncSel(i); }}
         onPersonPress={(p) => { setHidden(false); closeAll(); if (p.member_id === "me-local") router.push("/profile"); else router.push(`/person/${p.member_id}?group=${group?.id}`); }} />
 
-      {/* Big Google-Maps-style location button (left-center) + compass when the map is rotated */}
+      {/* Big location button (left-center). Compass removed. */}
       <View style={s.centerWrap} pointerEvents="box-none">
-        {Math.abs(mapHeading) > 1 ? (
-          <Pressable testID="fab-compass" onPress={resetNorth} style={[s.compassBtn, { backgroundColor: colors.surfaceSecondary }]} accessibilityLabel="Orientar al norte">
-            <Ionicons name="compass" size={22} color={colors.error} style={{ transform: [{ rotate: `${-mapHeading}deg` }] }} />
-          </Pressable>
+        {radiusKm != null ? (
+          <View style={s.radiusBadge} testID="group-radius"><Ionicons name="resize" size={13} color={colors.onBrandPrimary} /><T weight="bold" style={{ fontSize: 12, color: colors.onBrandPrimary }}>{radiusKm < 1 ? `${Math.round(radiusKm * 1000)} m` : `${radiusKm.toFixed(1)} km`}</T></View>
         ) : null}
-        <Pressable testID="fab-recenter" onPress={onLocate} style={[s.centerBtn, { backgroundColor: colors.surfaceSecondary }]} accessibilityLabel="Ubicación / brújula">
+        <Pressable testID="fab-recenter" onPress={onLocate} style={[s.centerBtn, { backgroundColor: colors.surfaceSecondary }]} accessibilityLabel="Centrar en mi ubicación">
           <Ionicons name={locateIcon as any} size={26} color={followMode === "off" ? colors.onSurface : colors.brandPrimary} />
         </Pressable>
       </View>
@@ -232,7 +227,7 @@ export default function MapHome() {
           <Pressable testID="search-bar-input" onPress={() => { closeAll(); router.push({ pathname: "/navigate", params: originParams }); }} style={s.barIcon} accessibilityLabel="¿A dónde vamos?"><Ionicons name="search" size={20} color={colors.onBrandPrimary} /></Pressable>
           <Pressable testID="menu-button" onPress={() => { closeAll(); setMainMenu(true); }} style={s.barIcon} accessibilityLabel="Menú"><Ionicons name="menu" size={22} color={colors.onBrandPrimary} /></Pressable>
         </View>
-        {chipGroups.length ? <GroupsBar groups={chipGroups} activeId={group?.id} onPress={(id) => { setHidden(false); closeAll(); router.push(`/group/${id}`); }} style={{ marginTop: spacing.sm }} /> : null}
+        {chipGroups.length ? <GroupsBar groups={chipGroups} activeId={group?.id} onPress={() => fitGroup()} style={{ marginTop: spacing.sm }} /> : null}
         {locBanner && sharesLocation && loc.perm !== "granted" ? (
           <Animated.View entering={FadeInDown} exiting={FadeOut} style={{ marginTop: spacing.sm }}>
             <Glass style={{ padding: spacing.md }} testID="location-permission-banner">
@@ -267,25 +262,20 @@ export default function MapHome() {
         <MemberRail members={otherMembers} top={railTop} bottom={insets.bottom + 92} onPress={(m) => { closeAll(); setMemberSel(m); }} />
       </Animated.View>
 
-      {/* Bottom-left map controls: privacy, traffic, layers (small, out of the way) */}
+      {/* Bottom-left: ONE round tools button that opens a compact menu (privacy, traffic, layers, refresh, availability) */}
       <Animated.View style={[s.leftFabs, { bottom: insets.bottom + spacing.lg }, ctrlStyle]} pointerEvents={hidden ? "none" : "box-none"}>
-        <Pressable testID="fab-privacy" onPress={() => { const next = !sharing; closeAll(); setSharing(next); }} style={[s.smallFab, { backgroundColor: colors.privacy, borderColor: colors.privacy }]} accessibilityLabel="Privacidad: qué comparto y con quién">
-          <Ionicons name="lock-closed" size={18} color={colors.onPrivacy} />
-        </Pressable>
-        <Pressable testID="fab-traffic" onPress={() => { const on = !traffic; closeAll(); setTraffic(on); setTrafficPanel(on); }} style={[s.smallFab, traffic && s.fabOn]} accessibilityLabel="Tráfico e incidencias">
-          <Ionicons name="car" size={18} color={traffic ? colors.onBrandPrimary : colors.onSurface} />
-          {traffic && incidents.data?.length ? <View style={s.fabBadge}><T weight="bold" style={{ fontSize: 9, color: colors.onWarning }}>{Math.min(99, incidents.data.length)}</T></View> : null}
-        </Pressable>
-        <Pressable testID="fab-layers" onPress={() => { const next = !layersOpen; closeAll(); setLayersOpen(next); }} style={[s.smallFab, (layersOpen || layers.length > 0) && s.fabOn]} accessibilityLabel="Capas del mapa">
-          <Ionicons name="layers" size={18} color={(layersOpen || layers.length > 0) ? colors.onBrandPrimary : colors.onSurface} />
-          {layers.length > 0 ? <View style={[s.fabBadge, { backgroundColor: colors.brandSecondary }]}><T weight="bold" style={{ fontSize: 9, color: colors.onBrandSecondary }}>{layers.length}</T></View> : null}
-        </Pressable>
-        <Pressable testID="fab-refresh" onPress={() => { const next = !refreshOpen; closeAll(); setRefreshOpen(next); }} style={[s.pillFab, refreshOpen && s.fabOn]} accessibilityLabel="Intervalo de actualización (ahorro de batería)">
-          <Ionicons name="timer-outline" size={16} color={refreshOpen ? colors.onBrandPrimary : colors.onSurface} />
-          <T weight="bold" style={{ fontSize: 11, color: refreshOpen ? colors.onBrandPrimary : colors.onSurface }}>{refreshSec}s</T>
-        </Pressable>
-        <Pressable testID="fab-availability" onPress={() => { const next = !availOpen; closeAll(); setAvailOpen(next); }} style={[s.smallFab, (availOpen) && s.fabOn, locPausedEff && { borderColor: colors.error, borderWidth: 2 }]} accessibilityLabel="Disponibilidad de ubicación">
-          <Ionicons name={locPausedEff ? "eye-off" : "time"} size={18} color={availOpen ? colors.onBrandPrimary : locPausedEff ? colors.error : colors.onSurface} />
+        {toolsOpen ? (
+          <Animated.View entering={FadeInDown.duration(140)} exiting={FadeOut.duration(100)} style={s.toolsMenu} testID="tools-menu">
+            <ToolItem testID="tool-privacy" icon="lock-closed" label="Privacidad" tint={colors.privacy} onPress={() => { closeAll(); setSharing(true); }} />
+            <ToolItem testID="tool-traffic" icon="car" label="Tráfico" active={traffic} onPress={() => { const on = !traffic; closeAll(); setTraffic(on); setTrafficPanel(on); }} />
+            <ToolItem testID="tool-layers" icon="layers" label={layers.length ? `Capas (${layers.length})` : "Capas"} active={layers.length > 0} onPress={() => { closeAll(); setLayersOpen(true); }} />
+            <ToolItem testID="tool-refresh" icon="timer-outline" label={`Refresco · ${refreshSec}s`} onPress={() => { closeAll(); setRefreshOpen(true); }} />
+            <ToolItem testID="tool-availability" icon={locPausedEff ? "eye-off" : "time"} label="Disponibilidad" tint={locPausedEff ? colors.error : undefined} onPress={() => { closeAll(); setAvailOpen(true); }} />
+          </Animated.View>
+        ) : null}
+        <Pressable testID="fab-tools" onPress={() => { const next = !toolsOpen; closeAll(); setToolsOpen(next); }} style={[s.smallFab, toolsOpen && s.fabOn]} accessibilityLabel="Herramientas del mapa">
+          <Ionicons name={toolsOpen ? "close" : "options"} size={20} color={toolsOpen ? colors.onBrandPrimary : colors.onSurface} />
+          {!toolsOpen && (layers.length > 0 || traffic || locPausedEff) ? <View style={[s.fabBadge, { backgroundColor: locPausedEff ? colors.error : colors.brandSecondary }]} /> : null}
         </Pressable>
       </Animated.View>
 
@@ -467,6 +457,18 @@ function HourStepper({ label, value, onChange, testID }: { label: string; value:
   );
 }
 
+function ToolItem({ icon, label, onPress, testID, active, tint }: { icon: string; label: string; onPress: () => void; testID: string; active?: boolean; tint?: string }) {
+  const { colors } = useTheme();
+  return (
+    <Pressable testID={testID} onPress={onPress} style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 9, paddingHorizontal: 12 }}>
+      <View style={{ width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center", backgroundColor: tint ?? (active ? colors.brandPrimary : colors.surfaceTertiary) }}>
+        <Ionicons name={icon as any} size={16} color={tint ? "#FFFFFF" : active ? colors.onBrandPrimary : colors.onSurface} />
+      </View>
+      <T weight="semibold" style={{ fontSize: 13.5, color: colors.onSurface }}>{label}</T>
+    </Pressable>
+  );
+}
+
 const useStyles = makeStyles((c) => ({
   root: { flex: 1, backgroundColor: c.mapTint },
   top: { position: "absolute", left: 0, right: 0, paddingHorizontal: spacing.md },
@@ -481,6 +483,8 @@ const useStyles = makeStyles((c) => ({
   centerWrap: { position: "absolute", left: spacing.md, top: 0, bottom: 0, justifyContent: "center" },
   centerBtn: { width: 60, height: 60, borderRadius: 30, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: c.border, shadowColor: c.surfaceInverse, shadowOpacity: 0.3, shadowRadius: 12, shadowOffset: { width: 0, height: 5 }, elevation: 7 },
   compassBtn: { width: 46, height: 46, borderRadius: 23, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: c.border, marginBottom: spacing.sm, shadowColor: c.surfaceInverse, shadowOpacity: 0.25, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 6 },
+  radiusBadge: { flexDirection: "row", alignItems: "center", gap: 5, alignSelf: "flex-start", backgroundColor: c.brandPrimary, borderRadius: radius.pill, paddingHorizontal: 12, height: 32, marginBottom: spacing.sm, shadowColor: c.surfaceInverse, shadowOpacity: 0.25, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 5 },
+  toolsMenu: { backgroundColor: c.glassStrong, borderRadius: radius.lg, borderWidth: 1, borderColor: c.border, overflow: "hidden", marginBottom: spacing.sm, minWidth: 194, paddingVertical: 4, shadowColor: c.surfaceInverse, shadowOpacity: 0.2, shadowRadius: 14, shadowOffset: { width: 0, height: 6 }, elevation: 7 },
   layerChip: { flexDirection: "row", alignItems: "center", gap: 6, height: 38, paddingHorizontal: 12, borderRadius: radius.pill, backgroundColor: c.surfaceTertiary, borderWidth: 1, borderColor: c.border },
   smallFab: { width: 44, height: 44, borderRadius: 22, backgroundColor: c.glassStrong, borderWidth: 1, borderColor: c.border, alignItems: "center", justifyContent: "center", shadowColor: c.surfaceInverse, shadowOpacity: 0.15, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 4 },
   pillFab: { flexDirection: "row", alignItems: "center", gap: 4, height: 44, paddingHorizontal: 12, borderRadius: 22, backgroundColor: c.glassStrong, borderWidth: 1, borderColor: c.border, shadowColor: c.surfaceInverse, shadowOpacity: 0.15, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 4 },
@@ -490,7 +494,7 @@ const useStyles = makeStyles((c) => ({
   sosWrap: { position: "absolute", left: 0, right: 0, alignItems: "center" },
   sosBtn: { width: 66, height: 66, borderRadius: 33, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: "rgba(255,255,255,0.85)", shadowColor: c.error, shadowOpacity: 0.5, shadowRadius: 14, shadowOffset: { width: 0, height: 6 }, elevation: 8 },
   incRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingVertical: 6, borderBottomWidth: 1, borderColor: c.divider },
-  selCard: { position: "absolute", left: spacing.md, right: spacing.md, backgroundColor: c.glassStrong, borderRadius: radius.lg, borderWidth: 1, borderColor: c.border, padding: spacing.md, shadowColor: c.surfaceInverse, shadowOpacity: 0.18, shadowRadius: 16, shadowOffset: { width: 0, height: 6 }, elevation: 6 },
+  selCard: { position: "absolute", left: spacing.md, right: spacing.md, backgroundColor: c.glass, borderRadius: radius.lg, borderWidth: 1, borderColor: c.border, padding: spacing.md, shadowColor: c.surfaceInverse, shadowOpacity: 0.18, shadowRadius: 16, shadowOffset: { width: 0, height: 6 }, elevation: 6 },
   closeBtn: { width: 28, height: 28, borderRadius: 14, backgroundColor: c.surfaceTertiary, alignItems: "center", justifyContent: "center" },
   tool: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4, height: 36, borderRadius: radius.pill, backgroundColor: c.surfaceTertiary, borderWidth: 1, borderColor: c.border, paddingHorizontal: 6 },
   toolOn: { backgroundColor: c.brandPrimary, borderColor: c.brandPrimary },

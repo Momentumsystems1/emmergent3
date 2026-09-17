@@ -103,11 +103,11 @@ export function UnavailableHost() {
     <Modal visible={!!d} transparent animationType="fade" onRequestClose={() => setD(null)}>
       <Pressable style={s.backdrop} onPress={() => setD(null)} />
       <View style={[s.sheet, { paddingBottom: insets.bottom + spacing.lg }]} testID="unavailable-sheet">
-        <View style={[s.iconWrap, { backgroundColor: isPlan ? colors.brandTertiary : colors.warning }]}>
-          <Ionicons name={isPlan ? "diamond" : "construct"} size={22} color={isPlan ? colors.onBrandTertiary : colors.onWarning} />
+        <View style={[s.iconWrap, { backgroundColor: isPlan ? colors.brandTertiary : colors.brandPrimary }]}>
+          <Ionicons name={isPlan ? "diamond" : "sparkles"} size={22} color={isPlan ? colors.onBrandTertiary : colors.onBrandPrimary} />
         </View>
-        <Text style={s.title} testID="unavailable-title">{d?.title}</Text>
-        {d?.reason ? <Text style={s.reason} testID="unavailable-reason">{d.reason}</Text> : null}
+        <Text style={s.title} testID="unavailable-title">{isPlan ? d?.title : "Próximamente"}</Text>
+        {d?.reason ? <Text style={s.reason} testID="unavailable-reason">{isPlan ? d.reason : "Esta función está en camino. Estará disponible en una próxima versión."}</Text> : null}
         <View style={{ gap: spacing.sm, marginTop: spacing.lg }}>
           {isPlan ? <Button testID="unavailable-upgrade-button" title="Ver planes y mejorar" icon="arrow-up-circle"
             onPress={() => { setD(null); router.push("/plans"); }} /> : null}

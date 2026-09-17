@@ -1,6 +1,6 @@
 // Shared map types/helpers used by both the native (MapCanvas.tsx) and web (MapCanvas.web.tsx) renderers.
-export type MapPerson = { member_id: string; user_id: string; name: string; color: string; state: string; lat?: number; lng?: number; is_me?: boolean; label?: string; precision?: string; at?: string; status?: string | null };
-export type MapPin = { id: string; lat: number; lng: number; title: string; color?: string };
+export type MapPerson = { member_id: string; user_id: string; name: string; color: string; state: string; lat?: number; lng?: number; is_me?: boolean; has_photo?: boolean; role?: string; label?: string; precision?: string; at?: string; status?: string | null };
+export type MapPin = { id: string; lat: number; lng: number; title: string; color?: string; icon?: string; onPress?: () => void };
 export type LatLng = { lat: number; lng: number };
 export type Incident = { id: string; lat: number; lng: number; type?: string; title?: string; description?: string; severity?: number; delay_s?: number; road_closed?: boolean; jam?: boolean };
 

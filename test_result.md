@@ -129,3 +129,17 @@ frontend: src/googleAuth.ts (platform redirect url, openAuthSessionAsync on mobi
 ## Iteration 6 — Welcome screen, multi-group onboarding, top bar/user card/groups rail, privacy+SOS, photo upload, 3D camera
 backend: routers/media.py (POST /api/profile/photo multipart → Emergent Object Storage; DELETE /api/profile/photo; GET /api/media/user/{uid}/photo with Bearer or ?token=, allowed to owner + active co-members), DELETE /api/groups/{id} (owner soft-delete), positions include has_photo, /auth/me has_photo, onboarding initial step now "profile" (consent step skipped in onboarding).
 frontend: app/welcome.tsx (index → /welcome when fresh), onboarding/group.tsx rewritten (multi-group cards: rename, delete, members, InviteOptions, add manual; "Continuar al mapa"), onboarding/profile.tsx PhotoPicker, map.tsx top bar (user color, photo, name, search, menu), UserCard (top-right: place, battery, tasks → expanded), GroupsRail (left, pulsing red + badge on attention), fab-privacy (fuchsia) + fab-sos (red gradient → sos-panel → POST /events kind emergency to all groups), MainMenu sheet, MapCanvas 3D camera (pitch 50, buildings, flat me marker).
+
+## Iteration 7 (2026-06) — Rediseño mapa: tarjetas de miembro, paleta Guardián, avatar en todas partes, capas POI
+backend (providers.py): NUEVO GET /api/mobility/poi?lat&lng&category&radius → Azure "Search Nearby" por categoría
+  (pharmacy/restaurant/park/hospital/police/fuel/cafe/market/parking/atm/school/gym). Curl-verificado (30 farmacias en Madrid). Auth requerido.
+frontend:
+  - theme.ts: PALETA "Guardián" (índigo #4F46E5 / #818CF8 + ámbar; SOS rosa #F43F5E; privacy violeta) — sustituye el cian.
+  - profile.tsx: subir/quitar foto de avatar (expo-image-picker → POST/DELETE /profile/photo). testIDs: profile-avatar-pick, profile-photo-change, profile-photo-remove.
+  - MemberRail.tsx (carril DERECHO): un rectángulo negro+blur por miembro (avatar con borde de color, nombre, calle+nº o estado, chevron). testID member-rect-{id}. Abre MemberToolsSheet.
+  - MemberToolsSheet.tsx: Centrar/Ir hacia/¿Todo bien?/Quedar/Convoy/Ficha + ETA. testID member-tools-sheet.
+  - BlurCard.tsx: tarjeta negra translúcida + blur (norma de diseño).
+  - map.tsx: quitados los FAB de herramientas de la derecha. Botón CENTRAR grande a la izquierda-centro (testID fab-recenter). SOS abajo-centro. Privacidad/Tráfico/Capas abajo-izquierda.
+    Paneles flotantes que se OCULTAN al arrastrar el mapa (onUserPan→hidden, reanimated) y vuelven al tocar un punto o Centrar (NATIVO). Selector de CAPAS (testID fab-layers, layers-panel, layer-{cat}) → pins POI (poiPins).
+  - MapCanvas.tsx + .web.tsx: marcadores de persona ahora muestran la FOTO del avatar (UserPhoto) con borde de color; "yo" anclado en 3D (flat) con halos.
+credentials: /app/memory/test_credentials.md (ana.demo@sentinelfamily.app / Sentinel2026!)

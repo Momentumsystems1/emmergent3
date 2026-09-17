@@ -5,7 +5,7 @@ import { View } from "react-native";
 import MapView, { Marker, Polyline, UrlTile } from "react-native-maps";
 
 import { BASE } from "@/src/api";
-import { PersonAvatar } from "@/src/components/orbs";
+import { UserPhoto } from "@/src/components/UserPhoto";
 import { useTheme } from "@/src/theme";
 
 import { incidentIcon, MapCanvasProps } from "@/src/components/mapTypes";
@@ -60,17 +60,34 @@ export function MapCanvas({ people, pins = [], polyline, onPersonPress, center, 
           </Marker>
         ))}
         {located.map((p) => (
-          <Marker key={p.member_id} coordinate={{ latitude: p.lat!, longitude: p.lng! }} onPress={() => onPersonPress?.(p)} anchor={p.is_me ? { x: 0.5, y: 0.5 } : { x: 0.4, y: 0.6 }} flat={!!p.is_me} testID={`map-person-${p.member_id}`}>
+          <Marker key={p.member_id} coordinate={{ latitude: p.lat!, longitude: p.lng! }} onPress={() => onPersonPress?.(p)} anchor={{ x: 0.5, y: p.is_me ? 0.5 : 0.5 }} flat={!!p.is_me} testID={`map-person-${p.member_id}`}>
             {p.is_me ? (
-              <View style={{ width: 64, height: 64, alignItems: "center", justifyContent: "center" }}>
-                <View style={{ position: "absolute", width: 64, height: 64, borderRadius: 32, backgroundColor: p.color, opacity: 0.18 }} />
-                <View style={{ position: "absolute", width: 40, height: 40, borderRadius: 20, backgroundColor: p.color, opacity: 0.35 }} />
-                <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: p.color, borderWidth: 3, borderColor: colors.glassStrong, shadowColor: colors.surfaceInverse, shadowOpacity: 0.4, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 4 }} />
+              <View style={{ width: 76, height: 76, alignItems: "center", justifyContent: "center" }}>
+                <View style={{ position: "absolute", width: 76, height: 76, borderRadius: 38, backgroundColor: p.color, opacity: 0.16 }} />
+                <View style={{ position: "absolute", width: 52, height: 52, borderRadius: 26, backgroundColor: p.color, opacity: 0.3 }} />
+                <View style={{ width: 44, height: 44, borderRadius: 22, borderWidth: 3, borderColor: p.color, overflow: "hidden", backgroundColor: colors.surfaceSecondary, shadowColor: colors.surfaceInverse, shadowOpacity: 0.4, shadowRadius: 5, shadowOffset: { width: 0, height: 2 }, elevation: 5 }}>
+                  <UserPhoto userId={p.user_id} name={p.name} color={p.color} size={38} hasPhoto={p.has_photo} />
+                </View>
               </View>
-            ) : <PersonAvatar name={p.name} color={p.color} state="shared" size={42} />}
+            ) : (
+              <View style={{ alignItems: "center" }}>
+                <View style={{ width: 40, height: 40, borderRadius: 20, borderWidth: 2.5, borderColor: p.state === "shared" ? p.color : colors.pending, overflow: "hidden", backgroundColor: colors.surfaceSecondary, shadowColor: colors.surfaceInverse, shadowOpacity: 0.3, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 4 }}>
+                  <UserPhoto userId={p.user_id} name={p.name} color={p.state === "shared" ? p.color : colors.pending} size={35} hasPhoto={p.has_photo} />
+                </View>
+                <View style={{ width: 0, height: 0, borderLeftWidth: 5, borderRightWidth: 5, borderTopWidth: 7, borderLeftColor: "transparent", borderRightColor: "transparent", borderTopColor: p.state === "shared" ? p.color : colors.pending, marginTop: -1 }} />
+              </View>
+            )}
           </Marker>
         ))}
-        {pins.map((p) => <Marker key={p.id} coordinate={{ latitude: p.lat, longitude: p.lng }} title={p.title} pinColor={p.color ?? colors.brandSecondary} />)}
+        {pins.map((p) => (
+          p.icon
+            ? <Marker key={p.id} coordinate={{ latitude: p.lat, longitude: p.lng }} title={p.title} onPress={p.onPress} anchor={{ x: 0.5, y: 0.5 }} tracksViewChanges={false} testID={`map-poi-${p.id}`}>
+                <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: p.color ?? colors.brandSecondary, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: colors.glassStrong }}>
+                  <Ionicons name={p.icon as any} size={15} color={colors.onBrandSecondary} />
+                </View>
+              </Marker>
+            : <Marker key={p.id} coordinate={{ latitude: p.lat, longitude: p.lng }} title={p.title} pinColor={p.color ?? colors.brandSecondary} />
+        ))}
         {selected ? <Marker coordinate={{ latitude: selected.lat, longitude: selected.lng }} pinColor={colors.brandPrimary} testID="map-selected-pin" /> : null}
         {polyline && polyline.length > 1 ? <Polyline coordinates={polyline.map(([lat, lng]) => ({ latitude: lat, longitude: lng }))} strokeColor={colors.brandSecondary} strokeWidth={4} /> : null}
       </MapView>

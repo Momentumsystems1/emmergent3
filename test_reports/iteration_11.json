@@ -1,0 +1,54 @@
+{
+  "summary": "Both BACKEND and FRONTEND tested for iteration 11 (map redesign: fab-recenter, member rail rectangles, member tools sheet, layers/POI selector, SOS palette, profile photo). BACKEND: 13/13 pytest tests passing (POI happy paths for 6 categories + auth + invalid-category controlled 503; profile photo upload jpeg/png/webp + GET + DELETE + auth-gate + non-image rejection). FRONTEND: 12/12 UI checks passing on mobile viewport 390x844 as Ana. One real design overlap bug detected: location permission banner overlaps visually with the top member rectangles when both are shown at the same time.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "/map",
+        "issues": [
+          "OVERLAP: When the 'Permiso de ubicación del dispositivo' banner (location-permission-banner) is visible, its content vertically overlaps the top of the MemberRail rectangles on the right side. Reason: the banner sits inside the top pill's absolute container growing downward while MemberRail is anchored at insets.top + 140 in a separate absolute layer, so both overlap in a ~40px band around y≈150. See /app/frontend/app/map.tsx:175-186 (banner marginTop: spacing.sm + 56 = ~64) and :211 (MemberRail top: insets.top + 140). Suggested fix: when locBanner is visible, push the MemberRail's top down (e.g. use a state ref or the banner's measured height, or use insets.top + 220 while locBanner is open). Visible in screenshots 03_map.png / 05_layers.png."
+        ]
+      }
+    ],
+    "react_native_issues": [
+      {
+        "component": "shadow* props",
+        "issue": "React Native Web deprecation warning: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' Emitted repeatedly in console when /map and /profile render. Non-fatal but should be migrated to boxShadow in styles (project-wide, many components: map.tsx s.bar/centerBtn/smallFab/sosBtn/selCard/hintBtn use shadowColor/shadowOpacity/shadowRadius/shadowOffset)."
+      },
+      {
+        "component": "pointerEvents prop",
+        "issue": "React Native Web deprecation warning: 'props.pointerEvents is deprecated. Use style.pointerEvents'. Emitted from several <View pointerEvents=...> usages (map.tsx uses pointerEvents=\"box-none\" as a prop in multiple places, e.g. lines 156, 163, 187 area, 204, 209, 215, 254, 331)."
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration11_poi_photo.py",
+    "/app/test_reports/pytest/it11_results.xml"
+  ],
+  "action_items": [
+    "Fix MemberRail vs. location-permission-banner vertical overlap on /map (see design_issues above).",
+    "Optional: migrate shadow* style props to boxShadow to silence RNW deprecation warnings.",
+    "Optional: migrate <View pointerEvents=...> to style.pointerEvents (RNW deprecation).",
+    "Minor (from prior iteration, still open): translate 'open' invitation status in MemberSheet (src/components/sheets.tsx)."
+  ],
+  "critical_code_review_comments": [
+    "map.tsx line 132: poiPins onPress closes all sheets and opens sel with (lat,lng) but does not pass the POI's name; user then sees 'Buscando dirección…' → reverse geocoded name instead of the POI's original name. Consider passing the pin's name into a name override to display the pharmacy/restaurant name immediately (UX nit, not a bug).",
+    "providers.py line 219: POI invalid category correctly raises Unavailable (503 with detail.code=SERVICE_NOT_CONFIGURED). Consider using a more specific error code like 'INVALID_CATEGORY' with 400 status for client-error semantics; currently indistinguishable from a real service outage by the client.",
+    "MemberRail.tsx renders a per-row useQuery for reverse geocoding one call per shared member — fine for 5-10 members but consider batching if group grows.",
+    "media.py user_photo endpoint requires auth via Bearer OR ?token= query param. On web preview, <img src=/media/...> cannot send Authorization headers → 401 errors observed in console when the browser tries to prefetch. Native fetch handles headers correctly, but for web/UserPhoto rendering, ensure a signed/token URL is used or bypass fetching when has_photo is false (verify UserPhoto.web.tsx implementation)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration11_poi_photo.py (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (13/13 pytest passing)",
+    "frontend": "~92% (all functional testIDs present and interactive; 1 visible design overlap issue on /map)"
+  },
+  "seed_data_creation": "None. Registered temporary throwaway users under TEST_photo_* for photo tests, cleaned by DELETE /profile/photo at the end. No modifications to Ana or her group.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "VERIFIED FRONTEND: Login ana.demo works via /onboarding/account → 'Ya tengo cuenta' (onboarding-account-secondary) → email/password → onboarding-account-primary → /map. On /map: map-home present; fab-recenter (big blue circle left-center, 60x60) present; fab-sos (pink SOS button bottom-center) present; fab-privacy/fab-traffic/fab-layers small FABs bottom-left; MemberRail shows 2 member-rect-<id> rectangles (Juandos Fernández×2 with 'Permiso de ubicación pendiente' subtitle — correct because those members have no lat/lng). Tapping member-rect opens member-tools-sheet with member-tool-focus/go/ping/meet/convoy/card + member-tools-close; sheet closes cleanly. Layers panel: fab-layers opens layers-panel with all 8 categories (Farmacias/Restaurantes/Parques/Hospitales/Comisarías/Gasolineras/Supermercados/Cafeterías). Selecting layer-pharmacy + layer-restaurant highlights both chips and shows '60 lugares cerca (Azure Maps)' — Azure POI integration works end-to-end. layers-close hides panel. /profile loads with profile-avatar-pick and profile-photo-change testIDs present. Palette confirmed: SOS pink gradient, fab-recenter indigo, member borders in per-member colors. VERIFIED BACKEND: /api/mobility/poi returns real Azure Maps POI data for pharmacy/restaurant/park/hospital/police/fuel (list of {name,lat,lng,category,address,phone}); requires Bearer auth (401 without); invalid category returns 503 SERVICE_NOT_CONFIGURED. /api/profile/photo POST accepts multipart image/jpeg + image/png + image/webp, rejects text/plain (400), and requires auth. GET /api/media/user/{uid}/photo returns the image (auth required — 401 without) and 404 after DELETE. /auth/me.has_photo flips true/false correctly. ONE UI DESIGN BUG (see design_issues): location permission banner overlaps member rectangles when both visible.",
+  "rca_of_issue": "MemberRail top offset (insets.top + 140) is hard-coded and does not account for the location-permission-banner's expanded height (~120px). Both live in different absolute-positioned containers, so they render on top of each other in the 130-170 px vertical band. Fix: make MemberRail top responsive to whether locBanner is visible (e.g. top = insets.top + (locBanner ? 260 : 140))."
+}

@@ -70,3 +70,12 @@ Receptores del SOS = contactos de emergencia elegidos por el usuario (selector a
   - Norma de diseño: `src/components/BlurCard.tsx` (fondo negro translúcido + BlurView, texto blanco, no ocupa todo el mapa). BLUR_TEXT/BLUR_MUTED.
   - Controles del mapa reubicados: SOS abajo-centro (66px), Privacidad+Tráfico+Recentrar abajo-izquierda (44px). Tarjetas inferiores subidas +84 para no tapar SOS.
   - Verificado por screenshot (login ana.demo): rectángulos, ficha de miembro y perfil OK. Backend intacto en F1.
+- **Lote UI (2026-06, sobre correcciones del usuario) COMPLETADO + testeado (iteración 11, 13/13 backend + frontend OK):**
+  - Paleta "Guardián" en theme.ts (índigo #4F46E5/#818CF8 + ámbar; SOS rosa #F43F5E; privacy violeta) reemplaza el cian.
+  - Avatar en TODAS partes: marcadores de mapa (nativo y web) muestran la foto del avatar con borde de color; "yo" anclado en 3D (flat) con halos y zoom cercano.
+  - Botón CENTRAR grande a la izquierda-centro (s.centerBtn, 60px). Privacidad/Tráfico/Capas abajo-izquierda; SOS abajo-centro.
+  - Paneles flotantes que se OCULTAN al arrastrar el mapa (onUserPan→hidden, reanimated translate+fade) y vuelven al tocar un punto o pulsar Centrar. SOLO NATIVO.
+  - Selector de CAPAS (fab-layers → layers-panel; farmacias/restaurantes/parques/hospitales/comisarías/gasolineras/supermercados/cafeterías) → backend GET /api/mobility/poi (Azure Search Nearby, POI_CATS). Pins con icono/color por categoría (poiPins + POI_META).
+  - Fix overlap banner↔MemberRail (railTop dinámico).
+  - Pendiente (web-only, ignorable): warnings shadow*/pointerEvents. Google 3D Navigation SDK NO disponible en Expo Go (se mantiene la cámara 3D nativa).
+- **PRÓXIMO (acordado): Fase 2 SOS completo** — mantener pulsado 3s con anillo de progreso; pantalla roja emisor+receptores; datos (inicio/ubicación/timestamp/clima/sensores expo-sensors/batería) con actualización cada 20s en secuencia (SOS enviado→1→2→3…); código de 2 dígitos (defecto 78) solo el emisor desactiva; selector de contactos de emergencia (receptores elegidos); icono rojo central con foto del emisor + parpadeo + sonido en receptores; hospitales/comisarías + botón de emergencias en el mapa de ambos. Fase 4 quedada optimizada + punto intermedio. Fase 5 NAP (clave 20d7e5ae-...).

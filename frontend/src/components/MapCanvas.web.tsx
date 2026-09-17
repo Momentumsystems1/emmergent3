@@ -7,7 +7,7 @@ import { Image, Pressable, Text, View } from "react-native";
 
 import { BASE } from "@/src/api";
 import { incidentIcon, LatLng, MapCanvasProps } from "@/src/components/mapTypes";
-import { PersonAvatar } from "@/src/components/orbs";
+import { UserPhoto } from "@/src/components/UserPhoto";
 import { fonts, makeStyles, radius, spacing, useTheme } from "@/src/theme";
 
 export * from "@/src/components/mapTypes";
@@ -54,12 +54,17 @@ export function MapCanvas({ people, pins = [], polyline, onPersonPress, center, 
           <View style={[s.inc, { backgroundColor: i.road_closed ? colors.error : colors.warning }]}><Ionicons name={incidentIcon(i) as any} size={14} color={i.road_closed ? colors.onError : colors.onWarning} /></View>
         </Pressable>
       ))}
-      {located.filter((p) => inView(p.lat!, p.lng!)).map((p) => (
-        <Pressable key={p.member_id} testID={`map-person-${p.member_id}`} onPress={() => onPersonPress?.(p)} style={[s.abs, proj(p.lat!, p.lng!), { marginLeft: -22, marginTop: -30 }]}>
-          <PersonAvatar name={p.name} color={p.color} state="shared" size={p.is_me ? 46 : 40} />
-          <Text style={s.pinTxt}>{p.name}</Text>
-        </Pressable>
-      ))}
+      {located.filter((p) => inView(p.lat!, p.lng!)).map((p) => {
+        const sz = p.is_me ? 46 : 40;
+        return (
+          <Pressable key={p.member_id} testID={`map-person-${p.member_id}`} onPress={() => onPersonPress?.(p)} style={[s.abs, proj(p.lat!, p.lng!), { marginLeft: -(sz / 2), marginTop: -(sz / 2) }]}>
+            <View style={{ width: sz, height: sz, borderRadius: sz / 2, borderWidth: 3, borderColor: p.color, overflow: "hidden", backgroundColor: colors.surfaceSecondary }}>
+              <UserPhoto userId={p.user_id} name={p.name} color={p.color} size={sz - 6} hasPhoto={p.has_photo} />
+            </View>
+            <Text style={s.pinTxt}>{p.name}</Text>
+          </Pressable>
+        );
+      })}
       <View style={s.zoom} testID="map-zoom">
         <Pressable testID="map-zoom-in" onPress={() => setView((v) => ({ ...v, zoom: Math.min(19, v.zoom + 1) }))} style={s.zBtn}><Ionicons name="add" size={18} color={colors.onSurface} /></Pressable>
         <Pressable testID="map-zoom-out" onPress={() => setView((v) => ({ ...v, zoom: Math.max(3, v.zoom - 1) }))} style={s.zBtn}><Ionicons name="remove" size={18} color={colors.onSurface} /></Pressable>
@@ -77,6 +82,6 @@ const useStyles = makeStyles((c) => ({
   abs: { position: "absolute", alignItems: "center" },
   inc: { width: 26, height: 26, borderRadius: 13, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: c.glassStrong },
   pinTxt: { fontFamily: fonts.semibold, fontSize: 11, color: c.onSurface, marginTop: -2, backgroundColor: c.glassStrong, paddingHorizontal: 4, borderRadius: 4 },
-  zoom: { position: "absolute", left: spacing.md, top: "50%", gap: 6 },
+  zoom: { position: "absolute", right: spacing.md, top: "50%", gap: 6 },
   zBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: c.glassStrong, borderWidth: 1, borderColor: c.border, alignItems: "center", justifyContent: "center" },
 }));

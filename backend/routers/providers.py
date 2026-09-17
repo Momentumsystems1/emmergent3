@@ -203,6 +203,40 @@ async def along_route(body: AlongBody, user=Depends(current_user)):
              "detour_s": i.get("detourTime"), "category": body.category} for i in r.json().get("results", [])]
 
 
+# Nearby POI layers (Azure Maps "Search Nearby"): pharmacies, restaurants, parks, hospitals, police, fuel, etc.
+POI_CATS = {
+    "pharmacy": "7326", "restaurant": "7315", "park": "9362", "hospital": "7321",
+    "police": "7322", "fuel": "7311", "cafe": "9376", "market": "7332",
+    "parking": "7313", "atm": "7397", "school": "7372", "gym": "7320005",
+}
+
+
+@router.get("/poi")
+async def nearby_poi(lat: float, lng: float, category: str, radius: int = 3000, user=Depends(current_user)):
+    """POIs of a category around a point, for the map layer picker."""
+    if not AZURE_MAPS_KEY:
+        raise Unavailable("service", "Las capas de lugares requieren Azure Maps.", "places")
+    if category not in POI_CATS:
+        raise Unavailable("service", "Categoría de lugar no disponible.", "places")
+    try:
+        async with httpx.AsyncClient(timeout=12) as c:
+            r = await c.get("https://atlas.microsoft.com/search/nearby/json",
+                            params={"api-version": "1.0", "subscription-key": AZURE_MAPS_KEY, "lat": lat, "lon": lng,
+                                    "radius": max(300, min(radius, 20000)), "categorySet": POI_CATS[category], "limit": 30, "language": "es-ES"})
+            r.raise_for_status()
+    except httpx.HTTPError as e:
+        log.warning("poi failed: %s", e)
+        raise Unavailable("service", "La búsqueda de lugares no respondió.", "places")
+    out = []
+    for i in r.json().get("results", []):
+        a = i.get("address", {})
+        out.append({"id": i.get("id"), "name": i.get("poi", {}).get("name") or a.get("freeformAddress") or "Lugar",
+                    "lat": i["position"]["lat"], "lng": i["position"]["lon"], "category": category,
+                    "address": a.get("freeformAddress"), "phone": i.get("poi", {}).get("phone")})
+    return out
+
+
+
 class HistoryBody(BaseModel):
     name: str
     lat: float

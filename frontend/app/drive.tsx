@@ -180,7 +180,7 @@ export default function Drive() {
                 <View style={{ flex: 1 }}><T weight="semibold" style={{ fontSize: 13 }} numberOfLines={1}>{i.title || i.type}</T><T style={{ fontSize: 11, color: colors.muted }} numberOfLines={1}>{INCIDENT_TYPE[i.type ?? ""] ?? i.type}{i.road_closed ? " · vía cortada" : ""}{i.delay_s ? ` · +${Math.round(i.delay_s / 60)} min` : ""}</T></View>
               </Pressable>
             ))}
-            {incidentsQ.isSuccess && onRoute.length === 0 ? <T style={{ fontSize: 12, color: colors.muted }}>Ruta despejada: sin incidencias notificadas (Azure Maps).</T> : null}
+            {incidentsQ.isSuccess && onRoute.length === 0 ? <T style={{ fontSize: 12, color: colors.muted }}>Ruta despejada: sin incidencias notificadas (Mapbox).</T> : null}
             {incidentsQ.isError ? <T style={{ fontSize: 12, color: colors.error }}>Incidencias no disponibles ahora.</T> : null}
           </ScrollView>
         </Animated.View>

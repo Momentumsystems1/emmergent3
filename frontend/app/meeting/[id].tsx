@@ -46,7 +46,7 @@ export default function Meeting() {
               <T style={{ fontSize: 11, color: colors.brandPrimary, letterSpacing: 1 }}>LUGAR</T>
               <T weight="semibold">{d.destination?.name ?? (d.place_query ? `“${d.place_query}” no se pudo geocodificar` : "Sin destino definido")}</T>
               {d.destination?.provider ? <T style={{ fontSize: 11, color: colors.muted }}>Fuente: {d.destination.provider}</T> : null}
-              <View style={{ flexDirection: "row", gap: 8, marginTop: 6 }}><Pill label={d.status === "active" ? "Activa" : "Cerrada"} tone={d.status === "active" ? "green" : "muted"} /><Pill label={d.participants.some((p: any) => p.eta?.traffic) ? "Tráfico: con datos (Azure Maps)" : "Tráfico: sin datos"} tone={d.participants.some((p: any) => p.eta?.traffic) ? "blue" : "muted"} /></View>
+              <View style={{ flexDirection: "row", gap: 8, marginTop: 6 }}><Pill label={d.status === "active" ? "Activa" : "Cerrada"} tone={d.status === "active" ? "green" : "muted"} /><Pill label={d.participants.some((p: any) => p.eta?.traffic) ? "Tráfico: con datos (Mapbox)" : "Tráfico: sin datos"} tone={d.participants.some((p: any) => p.eta?.traffic) ? "blue" : "muted"} /></View>
             </View>
             <T weight="bold" style={{ marginTop: spacing.sm }}>Participantes</T>
             {d.participants.map((p: any) => (

@@ -80,6 +80,7 @@ async def group_view(g: dict, viewer_id: str) -> dict:
     alerts = await db.events.count_documents({"group_id": gid, "state": {"$in": ["open", "escalated"]}})
     return {**serialize(g), "members": members,
             "stats": {"members": sum(1 for m in members if m["status"] == "active"),
+                      "connected": sum(1 for m in members if m.get("location_state") == "shared"),
                       "pending": sum(1 for m in members if m["status"] == "pending"),
                       "alerts": alerts, "meeting": bool(active_meeting), "convoy": bool(active_convoy)},
             "my_role": next((m["role"] for m in members if m.get("user_id") == viewer_id), None)}

@@ -1,0 +1,42 @@
+{
+  "summary": "Both BACKEND and FRONTEND tested for iteration 12 (Google-Maps-like redesign: top groups-bar with chips + big left-center fab-recenter). BACKEND: 5/5 pytest tests passing — GET /api/groups (and /api/groups/{id}) returns stats with the new 'connected' key as int >= 0, alongside members/pending/alerts. FRONTEND: 10/10 UI checks passing on mobile viewport 390x844 as Ana. groups-bar renders one chip 'Grupo 1 · 3 miembros · 0 en línea · 1 aviso' at the top; tapping the chip navigates to /group/<id>. fab-recenter is 60x60 at (12,392) left-center and safe to tap in web ('off' state, locate-outline icon). Regression: fab-privacy/fab-traffic/fab-layers/layers-panel/layer-pharmacy, MemberRail rectangles, member-tools-sheet, fab-sos → sos-panel all still work. No serious console errors and no deprecation warnings observed on /map after the redesign. Native-only compass/heading flow correctly skipped per request. Design overlap between location-permission-banner and MemberRail rectangles reported in iter 11 is STILL PRESENT (banner now sits between the top bar and the groups-bar and still overlaps the top of the member rail — see screenshot).",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "/map",
+        "issues": [
+          "OVERLAP (still open from iter 11): When the 'Permiso de ubicación del dispositivo' banner (location-permission-banner) is visible, it visually overlaps the top of the MemberRail rectangles on the right side. Now that groups-bar is inserted between top-bar and the banner, the banner still sits inside the top-pill absolute container growing downward while MemberRail is anchored independently. In map.tsx, rightTop = insets.top + 76 + groupsH + (bannerVisible ? 128 : 0) is computed and passed to UserCard, but the value passed to MemberRail is railTop = rightTop + 58 — MemberRail's own 'top' does react to bannerVisible; however, in practice with locBanner AND groups-bar AND tripInvite together the vertical stack still exceeds railTop on 390x844 devices, so the banner text/buttons overlap the first member-rect (see /tmp/it12_02_map_final.png ~ y=280-330). Suggested fix: add more slack (e.g. 160 instead of 128 for bannerVisible) OR anchor MemberRail below the banner using onLayout so it measures dynamically."
+        ]
+      }
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration12_groups_stats.py",
+    "/app/test_reports/pytest/it12_results.xml"
+  ],
+  "action_items": [
+    "(Design, low priority) Fix residual banner ↔ MemberRail vertical overlap on /map. Consider measuring the top-pill height with onLayout and using it as the anchor for MemberRail's top, instead of the current hard-coded rightTop + 58 formula."
+  ],
+  "critical_code_review_comments": [
+    "GroupsBar.tsx line 34: alerts label pluralization is inverted logic: '{g.alerts} aviso{g.alerts === 1 ? \"\" : \"s\"}' — correct. Good.",
+    "map.tsx line 159: 'const groupsH = chipGroups.length ? 58 : 0' hardcodes chip bar height; if fonts scale up (a11y) chip height can exceed 58 and push MemberRail/UserCard content overlap. Consider onLayout-based measurement.",
+    "backend groups.py group_view line 82-85: stats.connected correctly counts location_state == 'shared'. Note this is a per-request O(N members) scan with per-member DB reads (effective_permissions + positions_latest), which will list-N-times amplify for the /groups endpoint. Fine at Ana's scale (3 members) but consider caching effective_permissions per user or batching for larger orgs.",
+    "map.tsx handles followMode transitions in onLocate; web only ever sees 'off' → 'follow' when GPS present, otherwise stays 'off'. Native heading path is unreachable in web preview per intent."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration12_groups_stats.py (new, 5 tests)"
+  ],
+  "success_rate": {
+    "backend": "100% (5/5 pytest passing)",
+    "frontend": "100% functional (groups-bar renders, chip navigates, fab-recenter present/safe, all regressions pass); 1 pre-existing design overlap still visible."
+  },
+  "seed_data_creation": "None. Only read Ana's existing group.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "VERIFIED BACKEND: GET /api/groups (Bearer required) returns list with stats={members:int>=0, connected:int>=0, pending:int>=0, alerts:int>=0, meeting:bool, convoy:bool}. Ana's 'Grupo 1' shows members=3, connected=0, pending=0, alerts=1. GET /api/groups/{id} also exposes stats.connected. VERIFIED FRONTEND: Login via /onboarding/account → onboarding-account-secondary → account-email-input/account-password-input → onboarding-account-primary → /map. On /map, groups-bar (testID=groups-bar) sits below the top color-bar and shows one horizontal chip testID=group-chip-<id> with text 'Grupo 1' + '3 miembros · 0 en línea · 1 aviso'. Tapping the chip navigates to /group/<id> (verified URL contains /group/). fab-recenter (60x60 at x=12,y=392) is present in 'off' state on web (locate-outline icon) and tapping it does not crash the app. Regression path fully green: member-rect-<id> (2 present, both Juandos Fernández) → member-tools-sheet → member-tools-close; fab-layers → layers-panel → layer-pharmacy toggles; fab-sos → sos-panel → sos-cancel. Zero console errors emitted on /map interactions. Compass/heading mode (fab-compass, followMode='heading') is native-only and not visible on web preview — correctly not exercised.",
+  "rca_of_issue": "N/A — no functional bugs found for iteration 12. Only carryover design overlap noted."
+}

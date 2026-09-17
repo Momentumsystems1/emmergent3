@@ -28,25 +28,33 @@ const LIGHT_STYLE = [
   { featureType: "poi", stylers: [{ visibility: "off" }] },
 ];
 
-export function MapCanvas({ people, pins = [], polyline, onPersonPress, center, zoomDelta = 0.01, onMapPress, onMapLongPress, onUserPan, selected, traffic, incidents = [], onIncidentPress, pitch3d = 50 }: MapCanvasProps) {
+export function MapCanvas({ people, pins = [], polyline, onPersonPress, center, zoomDelta = 0.01, onMapPress, onMapLongPress, onUserPan, selected, traffic, incidents = [], onIncidentPress, pitch3d = 50, followMode = "off", deviceHeading = 0, onHeadingChange }: MapCanvasProps) {
   const { scheme, colors } = useTheme();
   const ref = useRef<MapView>(null);
   const tiles = `${BASE}/mobility/tiles`;
   const located = people.filter((p) => p.state === "shared" && p.lat != null);
   const me = located.find((p) => p.is_me);
   const c = center ?? (me ? { lat: me.lat!, lng: me.lng! } : located[0] ? { lat: located[0].lat!, lng: located[0].lng! } : { lat: 40.4168, lng: -3.7038 });
+  const zoom = Math.log2(360 / zoomDelta);
   // 3D perspective: pitched camera + buildings; the "me" marker is flat (anchored to the ground) so it rotates/scales with
   // the map's perspective and zoom instead of floating as a screen-space billboard.
   useEffect(() => {
-    if (center) ref.current?.animateCamera({ center: { latitude: center.lat, longitude: center.lng }, pitch: pitch3d, zoom: Math.log2(360 / zoomDelta), heading: 0 }, { duration: 600 });
+    if (center) ref.current?.animateCamera({ center: { latitude: center.lat, longitude: center.lng }, pitch: pitch3d, zoom, heading: 0 }, { duration: 600 });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [center?.lat, center?.lng, center?.key]);
+  // Compass / heading mode: rotate the camera to follow the phone's heading while keeping the user centered.
+  useEffect(() => {
+    if (followMode === "heading" && me) ref.current?.animateCamera({ center: { latitude: me.lat!, longitude: me.lng! }, pitch: pitch3d, zoom, heading: deviceHeading }, { duration: 300 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deviceHeading, followMode, me?.lat, me?.lng]);
   const coord = (e: any) => ({ lat: e.nativeEvent.coordinate.latitude, lng: e.nativeEvent.coordinate.longitude });
+  const reportHeading = async () => { try { const cam = await ref.current?.getCamera(); onHeadingChange?.(cam?.heading ?? 0); } catch { /* noop */ } };
   return (
     <View style={{ flex: 1, backgroundColor: colors.mapTint }} testID="map-canvas">
       <MapView ref={ref} style={{ flex: 1 }} customMapStyle={scheme === "dark" ? DARK_STYLE : LIGHT_STYLE} userInterfaceStyle={scheme}
         initialCamera={{ center: { latitude: c.lat, longitude: c.lng }, pitch: pitch3d, heading: 0, zoom: Math.log2(360 / (center ? zoomDelta : 0.06)), altitude: 1200 }}
         showsBuildings pitchEnabled rotateEnabled showsCompass={false} toolbarEnabled={false} showsMyLocationButton={false}
+        onRegionChangeComplete={onHeadingChange ? reportHeading : undefined}
         onPress={(e) => { if ((e.nativeEvent as any).action === "marker-press") return; onMapPress?.(coord(e)); }}
         onLongPress={(e) => onMapLongPress?.(coord(e))} onPanDrag={onUserPan ? () => onUserPan() : undefined}>
         {/* Azure Maps base (road / dark) + optional traffic-flow layer, proxied by the backend; incidents are markers */}

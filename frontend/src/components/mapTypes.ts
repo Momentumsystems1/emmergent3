@@ -25,4 +25,10 @@ export type MapCanvasProps = {
   onIncidentPress?: (i: Incident) => void;
   /** Camera pitch in degrees (0 = flat, ~50 = 3D perspective). Native only. */
   pitch3d?: number;
+  /** Google-Maps-like camera follow: "off" (free), "follow" (centered, north-up), "heading" (centered, rotates to device heading). Native only. */
+  followMode?: "off" | "follow" | "heading";
+  /** Device compass heading (deg) used when followMode === "heading". Native only. */
+  deviceHeading?: number;
+  /** Reports the map's current rotation so the caller can show a compass. Native only. */
+  onHeadingChange?: (heading: number) => void;
 };

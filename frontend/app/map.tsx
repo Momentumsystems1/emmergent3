@@ -17,7 +17,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { api } from "@/src/api";
 import { useAuth } from "@/src/auth";
 import { Incident, INCIDENT_TYPE, incidentIcon, LatLng, MapCanvas, MapPerson, MapPin } from "@/src/components/MapCanvas";
-import { GroupsRail } from "@/src/components/GroupsRail";
+import { GroupsBar, GroupChip } from "@/src/components/GroupsBar";
 import { MainMenu } from "@/src/components/MainMenu";
 import { MemberRail } from "@/src/components/MemberRail";
 import { MemberToolsSheet } from "@/src/components/MemberToolsSheet";
@@ -66,11 +66,13 @@ export default function MapHome() {
   const [hidden, setHidden] = useState(false);
   const [layersOpen, setLayersOpen] = useState(false);
   const [layers, setLayers] = useState<string[]>([]);
+  const [followMode, setFollowMode] = useState<"off" | "follow" | "heading">("off");
+  const [deviceHeading, setDeviceHeading] = useState(0);
+  const [mapHeading, setMapHeading] = useState(0);
   const hideAnim = useSharedValue(0);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { hideAnim.value = withTiming(hidden ? 1 : 0, { duration: 220 }); }, [hidden]);
   const topStyle = useAnimatedStyle(() => ({ opacity: 1 - hideAnim.value, transform: [{ translateY: -hideAnim.value * 160 }] }));
-  const leftStyle = useAnimatedStyle(() => ({ opacity: 1 - hideAnim.value, transform: [{ translateX: -hideAnim.value * 160 }] }));
   const rightStyle = useAnimatedStyle(() => ({ opacity: 1 - hideAnim.value, transform: [{ translateX: hideAnim.value * 260 }] }));
   const ctrlStyle = useAnimatedStyle(() => ({ opacity: 1 - hideAnim.value, transform: [{ translateX: -hideAnim.value * 120 }] }));
 
@@ -117,12 +119,28 @@ export default function MapHome() {
     : [...served.filter((p) => !p.is_me), { member_id: "me-local", user_id: user?.id ?? "me", name: name || "Tú", color: colors.brandPrimary, state: "shared", lat: mePos.lat, lng: mePos.lng, is_me: true, has_photo: user?.has_photo }];
   // one-shot centering on the first GPS fix
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { if (mePos && !focus) setFocus({ lat: mePos.lat, lng: mePos.lng, key: 1 }); }, [mePos?.lat, mePos?.lng, focus]);
+  useEffect(() => { if (mePos && !focus) { setFocus({ lat: mePos.lat, lng: mePos.lng, key: 1 }); setFollowMode("follow"); } }, [mePos?.lat, mePos?.lng, focus]);
+  // Compass: subscribe to the device heading only while in "heading" mode.
+  useEffect(() => {
+    if (followMode !== "heading") return;
+    let sub: any;
+    Location.watchHeadingAsync((h) => setDeviceHeading(Math.round(h.trueHeading >= 0 ? h.trueHeading : h.magHeading))).then((s) => { sub = s; }).catch(() => {});
+    return () => sub?.remove?.();
+  }, [followMode]);
 
   const closeAll = () => { setSel(null); setMemberSel(null); setSharing(false); setTrafficPanel(false); setIncSel(null); setUserOpen(false); setSosOpen(false); setLayersOpen(false); };
   const anyOpen = !!sel || !!memberSel || sharing || trafficPanel || !!incSel || userOpen || sosOpen || layersOpen || (locBanner && loc.perm !== "granted");
   const onMapPress = (c?: LatLng) => { setHidden(false); if (anyOpen) { closeAll(); setLocBanner(false); return; } if (c) setSel(c); };
-  const recenter = () => { setHidden(false); closeAll(); if (!mePos) { toast(loc.perm === "granted" ? "Obteniendo tu ubicación…" : "Permite la ubicación para centrarte"); if (loc.perm !== "granted") setLocBanner(true); return; } setFocus({ ...mePos, key: (focus?.key ?? 0) + 1 }); };
+  const recenter = () => { setHidden(false); closeAll(); if (!mePos) { toast(loc.perm === "granted" ? "Obteniendo tu ubicación…" : "Permite la ubicación para centrarte"); if (loc.perm !== "granted") setLocBanner(true); return; } setFollowMode("follow"); setFocus({ ...mePos, key: (focus?.key ?? 0) + 1 }); };
+  // Google-Maps-style location button: off → recenter (follow, north-up); follow → tap again → heading (map points where the phone points); heading → back to follow.
+  const onLocate = () => {
+    if (!mePos) return recenter();
+    if (followMode === "follow") { setHidden(false); setFollowMode("heading"); return; }
+    if (followMode === "heading") { setHidden(false); setFollowMode("follow"); setFocus({ ...mePos, key: (focus?.key ?? 0) + 1 }); return; }
+    recenter();
+  };
+  const resetNorth = () => { setFollowMode("follow"); if (mePos) setFocus({ ...mePos, key: (focus?.key ?? 0) + 1 }); setMapHeading(0); };
+  const locateIcon = followMode === "heading" ? "compass" : followMode === "follow" ? "locate" : "locate-outline";
   const originParams = originParamsOf(mePos);
   const poiCenter = focus ?? mePos ?? { lat: 40.4168, lng: -3.7038 };
   const poi = useQuery({
@@ -132,13 +150,15 @@ export default function MapHome() {
   const poiPins: MapPin[] = (poi.data ?? []).map((p: any, i: number) => ({ id: `poi-${p.category}-${p.id ?? i}`, lat: p.lat, lng: p.lng, title: p.name, color: POI_META[p.category]?.color, icon: POI_META[p.category]?.icon, onPress: () => { setHidden(false); closeAll(); setSel({ lat: p.lat, lng: p.lng }); } }));
   const selName = reverse.data?.name ?? (sel ? `${sel.lat.toFixed(5)}, ${sel.lng.toFixed(5)}` : "");
   const userColor = user?.avatar?.color ?? colors.brandPrimary;
-  const railGroups = (groups.data ?? []).map((g: any) => ({ id: g.id, name: g.name, attention: ((g.my_role === "owner" || g.my_role === "admin") ? (g.stats?.pending ?? 0) : 0) + (pendingTrips.data ?? []).filter((t) => t.group_id === g.id).length }));
+  const chipGroups: GroupChip[] = (groups.data ?? []).map((g: any) => ({ id: g.id, name: g.name, members: g.stats?.members ?? 0, connected: g.stats?.connected ?? 0, alerts: g.stats?.alerts ?? 0 }));
   const tasks = [
     ...(pendingTrips.data ?? []).map((t) => ({ id: `trip-${t.id}`, kind: "trip", label: `Viaje a ${t.destination?.name?.split(",")[0]} (${t.leader_name})`, onPress: () => { closeAll(); setDismissedTrip(null); } })),
     ...(groups.data ?? []).filter((g: any) => (g.my_role === "owner" || g.my_role === "admin") && g.stats?.pending).map((g: any) => ({ id: `inv-${g.id}`, kind: "invite", label: `${g.stats.pending} invitación(es) pendiente(s) en ${g.name}`, onPress: () => { closeAll(); router.push(`/group/${g.id}`); } })),
   ];
   const bannerVisible = locBanner && sharesLocation && loc.perm !== "granted";
-  const railTop = insets.top + 140 + (bannerVisible ? 128 : 0) + (tripInvite && !sel ? 96 : 0);
+  const groupsH = chipGroups.length ? 58 : 0;
+  const rightTop = insets.top + 76 + groupsH + (bannerVisible ? 172 : 0) + (tripInvite && !sel ? 104 : 0);
+  const railTop = rightTop + 58;
   const sendSos = async () => {
     const list = groups.data ?? [];
     if (!list.length) return toast("Crea un grupo para poder enviar un SOS");
@@ -150,14 +170,20 @@ export default function MapHome() {
 
   return (
     <View style={s.root} testID="map-home">
-      <MapCanvas people={people} pins={poiPins} center={focus} selected={sel} onMapPress={onMapPress} onMapLongPress={(c) => { setHidden(false); closeAll(); setSel(c); }} onUserPan={() => { if (!anyOpen) setHidden(true); }}
+      <MapCanvas people={people} pins={poiPins} center={focus} selected={sel} onMapPress={onMapPress} onMapLongPress={(c) => { setHidden(false); closeAll(); setSel(c); }} onUserPan={() => { if (!anyOpen) { setHidden(true); setFollowMode("off"); } }}
+        followMode={followMode} deviceHeading={deviceHeading} onHeadingChange={setMapHeading}
         traffic={traffic} incidents={traffic ? incidents.data ?? [] : []} onIncidentPress={(i) => { setHidden(false); closeAll(); setIncSel(i); }}
         onPersonPress={(p) => { setHidden(false); closeAll(); if (p.member_id === "me-local") router.push("/profile"); else router.push(`/person/${p.member_id}?group=${group?.id}`); }} />
 
-      {/* Big, easy-to-reach recenter button on the left-center edge */}
+      {/* Big Google-Maps-style location button (left-center) + compass when the map is rotated */}
       <View style={s.centerWrap} pointerEvents="box-none">
-        <Pressable testID="fab-recenter" onPress={recenter} style={[s.centerBtn, { backgroundColor: colors.brandPrimary }]} accessibilityLabel="Centrar en mi ubicación">
-          <Ionicons name="locate" size={26} color={colors.onBrandPrimary} />
+        {Math.abs(mapHeading) > 1 ? (
+          <Pressable testID="fab-compass" onPress={resetNorth} style={[s.compassBtn, { backgroundColor: colors.surfaceSecondary }]} accessibilityLabel="Orientar al norte">
+            <Ionicons name="compass" size={22} color={colors.error} style={{ transform: [{ rotate: `${-mapHeading}deg` }] }} />
+          </Pressable>
+        ) : null}
+        <Pressable testID="fab-recenter" onPress={onLocate} style={[s.centerBtn, { backgroundColor: colors.surfaceSecondary }]} accessibilityLabel="Ubicación / brújula">
+          <Ionicons name={locateIcon as any} size={26} color={followMode === "off" ? colors.onSurface : colors.brandPrimary} />
         </Pressable>
       </View>
 
@@ -174,8 +200,9 @@ export default function MapHome() {
           <Pressable testID="search-bar-input" onPress={() => { closeAll(); router.push({ pathname: "/navigate", params: originParams }); }} style={s.barIcon} accessibilityLabel="¿A dónde vamos?"><Ionicons name="search" size={20} color={colors.onBrandPrimary} /></Pressable>
           <Pressable testID="menu-button" onPress={() => { closeAll(); setMainMenu(true); }} style={s.barIcon} accessibilityLabel="Menú"><Ionicons name="menu" size={22} color={colors.onBrandPrimary} /></Pressable>
         </View>
+        {chipGroups.length ? <GroupsBar groups={chipGroups} activeId={group?.id} onPress={(id) => { setHidden(false); closeAll(); router.push(`/group/${id}`); }} style={{ marginTop: spacing.sm }} /> : null}
         {locBanner && sharesLocation && loc.perm !== "granted" ? (
-          <Animated.View entering={FadeInDown} exiting={FadeOut} style={{ marginTop: spacing.sm + 56 }}>
+          <Animated.View entering={FadeInDown} exiting={FadeOut} style={{ marginTop: spacing.sm }}>
             <Glass style={{ padding: spacing.md }} testID="location-permission-banner">
               <T weight="bold" style={{ fontSize: 13 }}>Permiso de ubicación del dispositivo</T>
               <T style={{ color: colors.muted, fontSize: 12, marginTop: 2 }}>Compartes tu ubicación con tu grupo; Sentinel necesita el permiso del sistema (solo con la app abierta).</T>
@@ -187,7 +214,7 @@ export default function MapHome() {
           </Animated.View>
         ) : null}
         {tripInvite && !sel ? (
-          <Animated.View entering={FadeInDown} exiting={FadeOut} style={{ marginTop: spacing.sm + (locBanner && sharesLocation && loc.perm !== "granted" ? 0 : 56) }}>
+          <Animated.View entering={FadeInDown} exiting={FadeOut} style={{ marginTop: spacing.sm }}>
             <Glass style={{ padding: spacing.md }} testID="trip-invite-banner">
               <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
                 <Ionicons name="car-sport" size={18} color={colors.brandPrimary} />
@@ -202,14 +229,9 @@ export default function MapHome() {
         ) : null}
       </Animated.View>
 
-      {/* Left rail: groups (pulsing red when something needs attention) */}
-      <Animated.View style={[StyleSheet.absoluteFill, leftStyle]} pointerEvents={hidden ? "none" : "box-none"}>
-        <GroupsRail groups={railGroups} top={insets.top + 76} activeId={group?.id} onPress={(g) => { setHidden(false); closeAll(); router.push(`/group/${g.id}`); }} />
-      </Animated.View>
-
       {/* Top-right user card + member rectangles */}
       <Animated.View style={[StyleSheet.absoluteFill, rightStyle]} pointerEvents={hidden ? "none" : "box-none"}>
-        <UserCard pos={mePos} tasks={tasks} top={insets.top + 76} sharing={sharesLocation && loc.perm === "granted"} open={userOpen} onOpen={() => { closeAll(); setUserOpen(true); }} onClose={() => setUserOpen(false)} />
+        <UserCard pos={mePos} tasks={tasks} top={rightTop} sharing={sharesLocation && loc.perm === "granted"} open={userOpen} onOpen={() => { closeAll(); setUserOpen(true); }} onClose={() => setUserOpen(false)} />
         <MemberRail members={otherMembers} top={railTop} bottom={insets.bottom + 92} onPress={(m) => { closeAll(); setMemberSel(m); }} />
       </Animated.View>
 
@@ -356,7 +378,8 @@ const useStyles = makeStyles((c) => ({
   badge: { position: "absolute", top: -2, right: -2, minWidth: 16, height: 16, borderRadius: 8, backgroundColor: c.pending, alignItems: "center", justifyContent: "center", paddingHorizontal: 3 },
   leftFabs: { position: "absolute", left: spacing.md, alignItems: "flex-start", gap: spacing.sm },
   centerWrap: { position: "absolute", left: spacing.md, top: 0, bottom: 0, justifyContent: "center" },
-  centerBtn: { width: 60, height: 60, borderRadius: 30, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: "rgba(255,255,255,0.85)", shadowColor: c.surfaceInverse, shadowOpacity: 0.3, shadowRadius: 12, shadowOffset: { width: 0, height: 5 }, elevation: 7 },
+  centerBtn: { width: 60, height: 60, borderRadius: 30, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: c.border, shadowColor: c.surfaceInverse, shadowOpacity: 0.3, shadowRadius: 12, shadowOffset: { width: 0, height: 5 }, elevation: 7 },
+  compassBtn: { width: 46, height: 46, borderRadius: 23, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: c.border, marginBottom: spacing.sm, shadowColor: c.surfaceInverse, shadowOpacity: 0.25, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 6 },
   layerChip: { flexDirection: "row", alignItems: "center", gap: 6, height: 38, paddingHorizontal: 12, borderRadius: radius.pill, backgroundColor: c.surfaceTertiary, borderWidth: 1, borderColor: c.border },
   smallFab: { width: 44, height: 44, borderRadius: 22, backgroundColor: c.glassStrong, borderWidth: 1, borderColor: c.border, alignItems: "center", justifyContent: "center", shadowColor: c.surfaceInverse, shadowOpacity: 0.15, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 4 },
   fabOn: { backgroundColor: c.brandPrimary, borderColor: c.brandPrimary },

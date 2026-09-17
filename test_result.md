@@ -143,3 +143,10 @@ frontend:
     Paneles flotantes que se OCULTAN al arrastrar el mapa (onUserPan→hidden, reanimated) y vuelven al tocar un punto o Centrar (NATIVO). Selector de CAPAS (testID fab-layers, layers-panel, layer-{cat}) → pins POI (poiPins).
   - MapCanvas.tsx + .web.tsx: marcadores de persona ahora muestran la FOTO del avatar (UserPhoto) con borde de color; "yo" anclado en 3D (flat) con halos.
 credentials: /app/memory/test_credentials.md (ana.demo@sentinelfamily.app / Sentinel2026!)
+
+## Iteration 8 (2026-06) — Mapa estilo Google Maps: chips de grupo arriba + botón de ubicación con estados + brújula
+backend (groups.py): group_view stats ahora incluye "connected" (miembros con location_state=="shared").
+frontend:
+  - GroupsBar.tsx: chips horizontales arriba (nombre · X miembros · Y en línea · Z avisos, punto rojo pulsante si hay avisos). testID groups-bar, group-chip-{id}. Sustituye al carril izquierdo GroupsRail en el mapa.
+  - map.tsx: botón de ubicación (testID fab-recenter) tipo Google con 3 estados: off=locate-outline (recentrar), follow=locate relleno (tocar→heading), heading=compass (mapa gira con la brújula del teléfono). onUserPan→followMode "off". Botón brújula (testID fab-compass) aparece cuando el mapa está rotado (mapHeading≠0)→orienta al norte. UserCard y MemberRail bajados para dejar sitio a los chips.
+  - MapCanvas.tsx (NATIVO): props followMode/deviceHeading/onHeadingChange; anima cámara a heading del dispositivo (expo-location watchHeadingAsync) en modo heading; reporta rotación con getCamera en onRegionChangeComplete. (Brújula/heading SOLO nativo, no verificable en web.)

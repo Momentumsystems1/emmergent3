@@ -30,7 +30,7 @@ function Item({ icon, label, sub, onPress, testID, danger }: { icon: string; lab
   const s = useStyles(); const { colors } = useTheme();
   return (
     <Pressable testID={testID} onPress={onPress} style={s.item}>
-      <View style={[s.icon, danger && { backgroundColor: colors.error }]}><Ionicons name={icon as any} size={18} color={danger ? colors.onError : colors.brandPrimary} /></View>
+      <View style={[s.icon, danger && { backgroundColor: colors.errorSoft }]}><Ionicons name={icon as any} size={18} color={danger ? colors.onErrorSoft : colors.onBrandSoft} /></View>
       <View style={{ flex: 1 }}><T weight="semibold" style={{ fontSize: 15, color: danger ? colors.error : colors.onSurface }}>{label}</T>{sub ? <T style={{ fontSize: 12, color: colors.muted }}>{sub}</T> : null}</View>
       <Ionicons name="chevron-forward" size={16} color={colors.muted} />
     </Pressable>
@@ -38,6 +38,6 @@ function Item({ icon, label, sub, onPress, testID, danger }: { icon: string; lab
 }
 
 const useStyles = makeStyles((c) => ({
-  item: { flexDirection: "row", alignItems: "center", gap: spacing.md, paddingVertical: 12, borderBottomWidth: 1, borderColor: c.divider },
-  icon: { width: 36, height: 36, borderRadius: radius.md, backgroundColor: c.surfaceTertiary, alignItems: "center", justifyContent: "center" },
+  item: { flexDirection: "row", alignItems: "center", gap: spacing.md, paddingVertical: 13, borderBottomWidth: 1, borderColor: c.divider },
+  icon: { width: 38, height: 38, borderRadius: radius.md, backgroundColor: c.brandSoft, alignItems: "center", justifyContent: "center" },
 }));

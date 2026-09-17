@@ -52,11 +52,11 @@ export function OnboardingScreen({ step, title, body, children, primary, onPrima
 
 const useStyles = makeStyles((c) => ({
   root: { flex: 1, backgroundColor: c.surface },
-  progress: { flexDirection: "row", gap: 6, paddingHorizontal: spacing.xl },
+  progress: { flexDirection: "row", gap: 5, paddingHorizontal: spacing.xl },
   dot: { height: 3, flex: 1, borderRadius: 2, backgroundColor: c.surfaceTertiary },
   dotOn: { backgroundColor: c.brandPrimary },
-  content: { paddingHorizontal: spacing.xl, paddingTop: spacing.xxxl, paddingBottom: spacing.xl },
-  title: { fontSize: 28, lineHeight: 36, letterSpacing: -0.4 },
-  body: { fontSize: 16, lineHeight: 24, color: c.muted, marginTop: spacing.lg },
+  content: { paddingHorizontal: spacing.xl, paddingTop: spacing.xxxl + spacing.md, paddingBottom: spacing.xl },
+  title: { fontSize: 30, lineHeight: 37, letterSpacing: -0.8 },
+  body: { fontSize: 15.5, lineHeight: 24, color: c.muted, marginTop: spacing.lg },
   actions: { paddingHorizontal: spacing.xl, gap: spacing.xs },
 }));

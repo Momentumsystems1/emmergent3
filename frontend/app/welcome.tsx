@@ -1,26 +1,34 @@
-// Welcome (first screen): full-bleed artwork + logo (placeholders, swappable in assets/images) → legal onboarding.
+// Welcome (first screen): full-bleed artwork + brand mark → legal onboarding.
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { Image, ImageBackground, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { T } from "@/src/components/ui";
-import { makeStyles, radius, spacing, useTheme } from "@/src/theme";
+import { makeStyles, radius, shadow, spacing, useTheme } from "@/src/theme";
 
 export default function Welcome() {
   const router = useRouter(); const insets = useSafeAreaInsets(); const s = useStyles(); const { colors } = useTheme();
   return (
     <ImageBackground source={require("../assets/images/welcome-bg.png")} style={s.root} resizeMode="cover" testID="welcome-screen">
-      <LinearGradient colors={["transparent", "rgba(5,12,25,0.55)", "rgba(5,12,25,0.95)"]} locations={[0.35, 0.65, 1]} style={s.shade} />
+      <LinearGradient colors={["rgba(4,7,15,0.15)", "rgba(4,7,15,0.55)", "rgba(4,7,15,0.96)"]} locations={[0.3, 0.62, 1]} style={s.shade} />
       <View style={[s.content, { paddingTop: insets.top + spacing.xxl, paddingBottom: insets.bottom + spacing.xl }]}>
         <View style={s.brand}>
-          <Image source={require("../assets/images/logo.png")} style={s.logo} testID="welcome-logo" />
+          <View style={s.logoRing}>
+            <Image source={require("../assets/images/logo.png")} style={s.logo} testID="welcome-logo" />
+          </View>
           <T weight="bold" style={s.title}>Sentinel Family</T>
           <T style={s.tagline}>Movilidad, coordinación y seguridad para los tuyos. Tu privacidad, siempre en tus manos.</T>
         </View>
-        <View style={{ gap: spacing.sm }}>
-          <Pressable testID="welcome-start" onPress={() => router.push("/onboarding/terms")} style={s.cta}><T weight="bold" style={{ color: colors.onBrandPrimary, fontSize: 16 }}>Empezar</T></Pressable>
-          <Pressable testID="welcome-login" onPress={() => router.push("/onboarding/account")} style={s.ghost}><T weight="semibold" style={{ color: "#FFFFFF", fontSize: 15 }}>Ya tengo cuenta</T></Pressable>
+        <View style={{ gap: spacing.md }}>
+          <Pressable testID="welcome-start" onPress={() => router.push("/onboarding/terms")}
+            style={({ pressed }) => [s.cta, pressed && { opacity: 0.88, transform: [{ scale: 0.985 }] }]}>
+            <T weight="bold" style={{ color: colors.onBrandPrimary, fontSize: 16, letterSpacing: 0.3 }}>Empezar</T>
+          </Pressable>
+          <Pressable testID="welcome-login" onPress={() => router.push("/onboarding/account")}
+            style={({ pressed }) => [s.ghost, pressed && { opacity: 0.75 }]}>
+            <T weight="semibold" style={{ color: "#FFFFFF", fontSize: 15 }}>Ya tengo cuenta</T>
+          </Pressable>
         </View>
       </View>
     </ImageBackground>
@@ -28,13 +36,14 @@ export default function Welcome() {
 }
 
 const useStyles = makeStyles((c) => ({
-  root: { flex: 1, backgroundColor: c.surfaceInverse },
+  root: { flex: 1, backgroundColor: "#04070F", overflow: "hidden" },
   shade: { position: "absolute", left: 0, right: 0, top: 0, bottom: 0 },
   content: { flex: 1, justifyContent: "space-between", paddingHorizontal: spacing.xl },
   brand: { alignItems: "center", marginTop: spacing.xxxl },
-  logo: { width: 108, height: 108, marginBottom: spacing.md },
-  title: { fontSize: 34, color: "#FFFFFF", letterSpacing: 0.5 },
-  tagline: { color: "rgba(255,255,255,0.85)", textAlign: "center", marginTop: spacing.sm, fontSize: 15, lineHeight: 22, maxWidth: 320 },
-  cta: { height: 54, borderRadius: radius.lg, backgroundColor: c.brandPrimary, alignItems: "center", justifyContent: "center" },
-  ghost: { height: 50, borderRadius: radius.lg, borderWidth: 1, borderColor: "rgba(255,255,255,0.5)", alignItems: "center", justifyContent: "center" },
+  logoRing: { width: 128, height: 128, borderRadius: 40, backgroundColor: "rgba(13,21,38,0.55)", borderWidth: 1, borderColor: "rgba(148,170,205,0.22)", alignItems: "center", justifyContent: "center", marginBottom: spacing.lg },
+  logo: { width: 92, height: 92 },
+  title: { fontSize: 34, lineHeight: 40, letterSpacing: -0.8, color: "#FFFFFF" },
+  tagline: { color: "rgba(255,255,255,0.82)", textAlign: "center", marginTop: spacing.md, fontSize: 15, lineHeight: 23, maxWidth: 320 },
+  cta: { height: 56, borderRadius: radius.md + 2, backgroundColor: c.brandPrimary, alignItems: "center", justifyContent: "center", ...shadow.pop },
+  ghost: { height: 52, borderRadius: radius.md + 2, borderWidth: 1, borderColor: "rgba(255,255,255,0.35)", backgroundColor: "rgba(255,255,255,0.06)", alignItems: "center", justifyContent: "center" },
 }));

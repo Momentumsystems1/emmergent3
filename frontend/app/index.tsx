@@ -1,11 +1,11 @@
 // Bootstrap: resolves where the user is (legal onboarding → account → consent → profile → group → map) and survives restarts.
 import { Redirect } from "expo-router";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, View } from "react-native";
+import { ActivityIndicator, Image, View } from "react-native";
 
 import { getLocalOnboarding, useAuth } from "@/src/auth";
 import { T } from "@/src/components/ui";
-import { useTheme } from "@/src/theme";
+import { fonts, useTheme } from "@/src/theme";
 
 const LOCAL_ROUTES: Record<string, string> = { terms: "/welcome", data: "/onboarding/data", transparency: "/onboarding/transparency", security: "/onboarding/security", account: "/onboarding/account" };
 const SERVER_ROUTES: Record<string, string> = { consent: "/onboarding/profile", profile: "/onboarding/profile", group: "/onboarding/group", done: "/map" };
@@ -29,9 +29,10 @@ export default function Index() {
 
   if (target) return <Redirect href={target as any} />;
   return (
-    <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.surface, gap: 12 }} testID="bootstrap-screen">
+    <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#060B16", gap: 18 }} testID="bootstrap-screen">
+      <Image source={require("../assets/images/logo.png")} style={{ width: 76, height: 76 }} />
+      <T weight="bold" style={{ color: "#F0F5FC", fontSize: 17, letterSpacing: -0.3 }}>Sentinel Family</T>
       <ActivityIndicator color={colors.brandPrimary} />
-      <T style={{ color: colors.muted }}>Sentinel</T>
     </View>
   );
 }

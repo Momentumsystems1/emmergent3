@@ -150,8 +150,9 @@ function RoleRow({ label, sub, active, onPress, testID, loading }: { label: stri
 }
 
 const useStyles = makeStyles((c) => ({
+  grabber: { alignSelf: "center", width: 36, height: 4, borderRadius: 2, backgroundColor: c.borderStrong, marginBottom: spacing.md },
   backdrop: { flex: 1, backgroundColor: c.overlay },
-  sheet: { backgroundColor: c.surfaceSecondary, borderTopLeftRadius: radius.lg + 8, borderTopRightRadius: radius.lg + 8, padding: spacing.lg, maxHeight: "88%", overflow: "hidden" },
+  sheet: { backgroundColor: c.surfaceSecondary, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, padding: spacing.lg, paddingTop: spacing.sm, maxHeight: "88%", overflow: "hidden", borderWidth: 1, borderColor: c.hairline },
   input: { height: 54, borderRadius: radius.md, backgroundColor: c.surfaceTertiary, borderWidth: 1, borderColor: c.border, paddingHorizontal: spacing.lg, fontFamily: fonts.regular, fontSize: 16, color: c.onSurface, marginTop: spacing.md },
   option: { flex: 1, padding: spacing.md, borderRadius: radius.md, borderWidth: 1.5, borderColor: c.border, backgroundColor: c.surfaceTertiary },
   optionOn: { borderColor: c.brandPrimary, backgroundColor: c.surfaceSecondary },

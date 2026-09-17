@@ -125,18 +125,18 @@ export default function MapHome() {
         traffic={traffic} incidents={traffic ? incidents.data ?? [] : []} onIncidentPress={(i) => { closeAll(); setIncSel(i); }}
         onPersonPress={(p) => { closeAll(); if (p.member_id === "me-local") router.push("/profile"); else router.push(`/person/${p.member_id}?group=${group?.id}`); }} />
 
-      {/* Top bar: user color, photo, name, search, menu */}
+      {/* Top bar: glass surface, user color as accent ring, photo, name, search, menu */}
       <View style={[s.top, { paddingTop: insets.top + spacing.sm }]} pointerEvents="box-none">
-        <View style={[s.bar, { backgroundColor: userColor }]} testID="top-bar">
+        <View style={s.bar} testID="top-bar">
           <Pressable testID="profile-shortcut" onPress={() => { closeAll(); setUserOpen(true); }} style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm, flex: 1 }}>
-            <UserPhoto userId={user?.id} name={name} color={userColor} size={36} hasPhoto={user?.has_photo} ring />
+            <UserPhoto userId={user?.id} name={name} color={userColor} size={38} hasPhoto={user?.has_photo} ring />
             <View style={{ flex: 1 }}>
-              <T weight="bold" style={{ fontSize: 15, color: colors.onBrandPrimary }} numberOfLines={1} testID="bar-name">{name || "Tú"}</T>
-              <T style={{ fontSize: 11, color: colors.onBrandPrimary, opacity: 0.85 }} numberOfLines={1} testID={greet ? "bar-greeting" : "bar-prompt"}>{greet ? "Hola, bienvenido" : group ? group.name : "Sin grupo"}</T>
+              <T weight="bold" style={{ fontSize: 15, letterSpacing: -0.2 }} numberOfLines={1} testID="bar-name">{name || "Tú"}</T>
+              <T style={{ fontSize: 11.5, color: colors.muted }} numberOfLines={1} testID={greet ? "bar-greeting" : "bar-prompt"}>{greet ? "Hola, bienvenido" : group ? group.name : "Sin grupo"}</T>
             </View>
           </Pressable>
-          <Pressable testID="search-bar-input" onPress={() => { closeAll(); router.push({ pathname: "/navigate", params: originParams }); }} style={s.barIcon} accessibilityLabel="¿A dónde vamos?"><Ionicons name="search" size={20} color={colors.onBrandPrimary} /></Pressable>
-          <Pressable testID="menu-button" onPress={() => { closeAll(); setMainMenu(true); }} style={s.barIcon} accessibilityLabel="Menú"><Ionicons name="menu" size={22} color={colors.onBrandPrimary} /></Pressable>
+          <Pressable testID="search-bar-input" onPress={() => { closeAll(); router.push({ pathname: "/navigate", params: originParams }); }} style={s.barIcon} accessibilityLabel="¿A dónde vamos?"><Ionicons name="search" size={19} color={colors.onSurface} /></Pressable>
+          <Pressable testID="menu-button" onPress={() => { closeAll(); setMainMenu(true); }} style={s.barIcon} accessibilityLabel="Menú"><Ionicons name="menu" size={21} color={colors.onSurface} /></Pressable>
         </View>
         {locBanner && sharesLocation && loc.perm !== "granted" ? (
           <Animated.View entering={FadeInDown} exiting={FadeOut} style={{ marginTop: spacing.sm + 56 }}>
@@ -177,11 +177,11 @@ export default function MapHome() {
 
       {/* Bottom-left map controls: privacy, traffic, recenter (small, out of the way) */}
       <View style={[s.leftFabs, { bottom: insets.bottom + spacing.lg }]} pointerEvents="box-none">
-        <Pressable testID="fab-privacy" onPress={() => { const next = !sharing; closeAll(); setSharing(next); }} style={[s.smallFab, { backgroundColor: colors.privacy, borderColor: colors.privacy }]} accessibilityLabel="Privacidad: qué comparto y con quién">
-          <Ionicons name="lock-closed" size={18} color={colors.onPrivacy} />
+        <Pressable testID="fab-privacy" onPress={() => { const next = !sharing; closeAll(); setSharing(next); }} style={[s.smallFab, { backgroundColor: colors.violetSoft, borderColor: "transparent" }]} accessibilityLabel="Privacidad: qué comparto y con quién">
+          <Ionicons name="lock-closed" size={18} color={colors.onVioletSoft} />
         </Pressable>
         <Pressable testID="fab-traffic" onPress={() => { const on = !traffic; closeAll(); setTraffic(on); setTrafficPanel(on); }} style={[s.smallFab, traffic && s.fabOn]} accessibilityLabel="Tráfico e incidencias">
-          <Ionicons name="car" size={18} color={traffic ? colors.onBrandPrimary : colors.onSurface} />
+          <Ionicons name="car" size={18} color={traffic ? colors.onBrandSoft : colors.onSurface} />
           {traffic && incidents.data?.length ? <View style={s.fabBadge}><T weight="bold" style={{ fontSize: 9, color: colors.onWarning }}>{Math.min(99, incidents.data.length)}</T></View> : null}
         </Pressable>
         <Pressable testID="fab-recenter" onPress={recenter} style={s.smallFab} accessibilityLabel="Centrar en mi ubicación"><Ionicons name="locate" size={18} color={mePos ? colors.brandPrimary : colors.muted} /></Pressable>
@@ -282,25 +282,25 @@ function Tool({ icon, label, onPress, testID, primary }: { icon: string; label: 
 const useStyles = makeStyles((c) => ({
   root: { flex: 1, backgroundColor: c.mapTint },
   top: { position: "absolute", left: 0, right: 0, paddingHorizontal: spacing.md },
-  bar: { flexDirection: "row", alignItems: "center", borderRadius: radius.lg, padding: 6, paddingLeft: 8, gap: 4, shadowColor: c.surfaceInverse, shadowOpacity: 0.2, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 5 },
+  bar: { flexDirection: "row", alignItems: "center", borderRadius: radius.pill, padding: 6, paddingLeft: 8, gap: 6, backgroundColor: c.glassStrong, borderWidth: 1, borderColor: c.hairline, shadowColor: c.surfaceInverse, shadowOpacity: 0.2, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: 5 },
   barLeft: { flex: 1, flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingLeft: spacing.sm, height: 44 },
   barTxt: { fontSize: 15 },
-  barIcon: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.18)" },
+  barIcon: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", backgroundColor: c.surfaceTertiary },
   sos: { borderWidth: 1.5, borderColor: "rgba(255,255,255,0.85)" },
   avatar: { backgroundColor: c.brandPrimary, width: 36, height: 36, borderRadius: 18, marginRight: 2 },
   badge: { position: "absolute", top: -2, right: -2, minWidth: 16, height: 16, borderRadius: 8, backgroundColor: c.pending, alignItems: "center", justifyContent: "center", paddingHorizontal: 3 },
   leftFabs: { position: "absolute", left: spacing.md, alignItems: "flex-start", gap: spacing.sm },
-  smallFab: { width: 44, height: 44, borderRadius: 22, backgroundColor: c.glassStrong, borderWidth: 1, borderColor: c.border, alignItems: "center", justifyContent: "center", shadowColor: c.surfaceInverse, shadowOpacity: 0.15, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 4 },
-  fabOn: { backgroundColor: c.brandPrimary, borderColor: c.brandPrimary },
+  smallFab: { width: 46, height: 46, borderRadius: 23, backgroundColor: c.glassStrong, borderWidth: 1, borderColor: c.hairline, alignItems: "center", justifyContent: "center", shadowColor: c.surfaceInverse, shadowOpacity: 0.16, shadowRadius: 12, shadowOffset: { width: 0, height: 5 }, elevation: 4 },
+  fabOn: { backgroundColor: c.brandSoft, borderColor: c.brandPrimary },
   fabBadge: { position: "absolute", top: -2, right: -2, minWidth: 16, height: 16, borderRadius: 8, backgroundColor: c.warning, alignItems: "center", justifyContent: "center", paddingHorizontal: 3 },
   sosWrap: { position: "absolute", left: 0, right: 0, alignItems: "center" },
-  sosBtn: { width: 66, height: 66, borderRadius: 33, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: "rgba(255,255,255,0.85)", shadowColor: c.error, shadowOpacity: 0.5, shadowRadius: 14, shadowOffset: { width: 0, height: 6 }, elevation: 8 },
-  incRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingVertical: 6, borderBottomWidth: 1, borderColor: c.divider },
-  selCard: { position: "absolute", left: spacing.md, right: spacing.md, backgroundColor: c.glassStrong, borderRadius: radius.lg, borderWidth: 1, borderColor: c.border, padding: spacing.md, shadowColor: c.surfaceInverse, shadowOpacity: 0.18, shadowRadius: 16, shadowOffset: { width: 0, height: 6 }, elevation: 6 },
+  sosBtn: { width: 66, height: 66, borderRadius: 33, alignItems: "center", justifyContent: "center", borderWidth: 2.5, borderColor: "rgba(255,255,255,0.9)", shadowColor: c.error, shadowOpacity: 0.55, shadowRadius: 16, shadowOffset: { width: 0, height: 7 }, elevation: 8 },
+  incRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingVertical: 8, borderBottomWidth: 1, borderColor: c.divider },
+  selCard: { position: "absolute", left: spacing.md, right: spacing.md, backgroundColor: c.glassStrong, borderRadius: radius.lg, borderWidth: 1, borderColor: c.hairline, padding: spacing.md + 2, shadowColor: c.surfaceInverse, shadowOpacity: 0.2, shadowRadius: 20, shadowOffset: { width: 0, height: 8 }, elevation: 6 },
   closeBtn: { width: 28, height: 28, borderRadius: 14, backgroundColor: c.surfaceTertiary, alignItems: "center", justifyContent: "center" },
-  tool: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4, height: 36, borderRadius: radius.pill, backgroundColor: c.surfaceTertiary, borderWidth: 1, borderColor: c.border, paddingHorizontal: 6 },
+  tool: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, height: 38, borderRadius: radius.pill, backgroundColor: c.surfaceSecondary, borderWidth: 1, borderColor: c.border, paddingHorizontal: 6 },
   toolOn: { backgroundColor: c.brandPrimary, borderColor: c.brandPrimary },
   hint: { position: "absolute", left: spacing.md, right: spacing.md, alignItems: "flex-start" },
-  hintBtn: { flexDirection: "row", alignItems: "center", gap: 6, height: 44, paddingHorizontal: 16, borderRadius: radius.pill, backgroundColor: c.brandPrimary, shadowColor: c.surfaceInverse, shadowOpacity: 0.15, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 4 },
+  hintBtn: { flexDirection: "row", alignItems: "center", gap: 6, height: 46, paddingHorizontal: 18, borderRadius: radius.pill, backgroundColor: c.brandPrimary, shadowColor: c.brandPrimary, shadowOpacity: 0.35, shadowRadius: 14, shadowOffset: { width: 0, height: 5 }, elevation: 4 },
   txt: { fontFamily: fonts.regular },
 }));

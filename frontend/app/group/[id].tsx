@@ -11,7 +11,7 @@ import { useAuth } from "@/src/auth";
 import { InviteOptions } from "@/src/components/InviteOptions";
 import { OrbitalField } from "@/src/components/OrbitalField";
 import { AddMemberSheet, MemberInfo, MemberSheet } from "@/src/components/sheets";
-import { Button, Pill, showUnavailable, T, toast } from "@/src/components/ui";
+import { Button, Pill, SectionLabel, showUnavailable, T, toast } from "@/src/components/ui";
 import { dispatchInvitation } from "@/src/invites";
 import { fonts, makeStyles, radius, spacing, useTheme } from "@/src/theme";
 
@@ -99,10 +99,14 @@ export default function GroupDetail() {
           </>
         ) : null}
       </View>
-      <View style={s.tabs}>
-        {(["members", "events"] as const).map((k) => (
-          <Pressable key={k} testID={`group-tab-${k}`} onPress={() => setView(k)} style={[s.tab, view === k && s.tabOn]}><T weight="semibold" style={{ fontSize: 13, color: view === k ? colors.onBrandPrimary : colors.onSurface }}>{k === "members" ? "Miembros" : "Actividad"}</T></Pressable>
-        ))}
+      <View style={s.tabsWrap}>
+        <View style={s.tabs}>
+          {(["members", "events"] as const).map((k) => (
+            <Pressable key={k} testID={`group-tab-${k}`} onPress={() => setView(k)} style={[s.tab, view === k && s.tabOn]}>
+              <T weight="semibold" style={{ fontSize: 13, color: view === k ? colors.onBrandSoft : colors.onSurfaceTertiary }}>{k === "members" ? "Miembros" : "Actividad"}</T>
+            </Pressable>
+          ))}
+        </View>
       </View>
       <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + spacing.xl }}>
         {view === "members" && group ? (
@@ -124,12 +128,12 @@ export default function GroupDetail() {
                   </View>
                   <View style={s.rowPills}>
                     <Pill label={STATUS[m.status] ?? m.status} tone={m.status === "active" ? "cyan" : m.status === "pending" ? "muted" : "red"} />
-                    {m.status === "active" ? <Pill label={LOC[m.location_state] ?? ""} tone={m.location_state === "shared" ? "green" : "muted"} /> : null}
+                    {m.status === "active" && LOC[m.location_state] ? <Pill label={LOC[m.location_state]} tone={m.location_state === "shared" ? "green" : "muted"} /> : null}
                   </View>
                 </Pressable>
               ))}
-              {canManage ? (<><T weight="bold" style={{ marginTop: spacing.lg }}>Invitar</T><InviteOptions groupId={id!} groupName={group.name} onChanged={() => qc.invalidateQueries({ queryKey: ["group", id] })} /></>) : null}
-              <T weight="bold" style={{ marginTop: spacing.lg }}>Coordinación</T>
+              {canManage ? (<><SectionLabel style={{ marginTop: spacing.xl, marginBottom: spacing.xs }}>Invitar</SectionLabel><InviteOptions groupId={id!} groupName={group.name} onChanged={() => qc.invalidateQueries({ queryKey: ["group", id] })} /></>) : null}
+              <SectionLabel style={{ marginTop: spacing.xl, marginBottom: spacing.xs }}>Coordinación</SectionLabel>
               <View style={{ flexDirection: "row", gap: spacing.sm }}>
                 <Button small testID="group-new-meeting" title="Quedar" icon="calendar" variant="secondary" onPress={() => router.push({ pathname: "/meeting/new", params: { group: id } })} />
                 <Button small testID="group-new-convoy" title="Convoy" icon="car-sport" variant="secondary" onPress={() => router.push({ pathname: "/convoy/new", params: { group: id } })} />
@@ -166,7 +170,7 @@ export default function GroupDetail() {
   );
 }
 
-const ROLE: Record<string, string> = { owner: "Propietario", admin: "Administrador", adult_responsible: "Adulto responsable", adult_member: "Miembro adulto", protected_minor: "Menor protegido", temporary_guest: "Invitado temporal" };
+const ROLE: Record<string, string> = { owner: "Propietario", admin: "Administrador", member: "Miembro", adult_responsible: "Adulto responsable", adult_member: "Miembro adulto", protected_minor: "Menor protegido", temporary_guest: "Invitado temporal" };
 const STATUS: Record<string, string> = { active: "Activo", pending: "Pendiente", declined: "Rechazada", expired: "Expirada", removed: "Eliminado" };
 const LOC: Record<string, string> = { shared: "Ubicación", not_shared: "Sin ubicación", permission_pending: "Ubicación: permiso pendiente" };
 
@@ -174,12 +178,13 @@ const useStyles = makeStyles((c) => ({
   root: { flex: 1, backgroundColor: c.surface },
   header: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingHorizontal: spacing.lg, paddingBottom: spacing.md },
   renameInput: { flex: 1, fontFamily: fonts.bold, fontSize: 18, color: c.onSurface, borderBottomWidth: 1, borderColor: c.brandPrimary, paddingVertical: 4 },
-  iconBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: c.surfaceTertiary, alignItems: "center", justifyContent: "center" },
-  tabs: { flexDirection: "row", gap: spacing.sm, paddingHorizontal: spacing.lg },
-  tab: { height: 36, paddingHorizontal: 16, borderRadius: radius.pill, backgroundColor: c.surfaceTertiary, alignItems: "center", justifyContent: "center" },
-  tabOn: { backgroundColor: c.brandPrimary },
-  row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.sm, backgroundColor: c.surfaceSecondary, borderRadius: radius.md, padding: spacing.md, borderWidth: 1, borderColor: c.border },
+  iconBtn: { width: 42, height: 42, borderRadius: 21, backgroundColor: c.surfaceSecondary, borderWidth: 1, borderColor: c.hairline, alignItems: "center", justifyContent: "center" },
+  tabsWrap: { paddingHorizontal: spacing.lg },
+  tabs: { flexDirection: "row", gap: 4, backgroundColor: c.surfaceTertiary, borderRadius: radius.pill, padding: 4, alignSelf: "flex-start" },
+  tab: { height: 34, paddingHorizontal: 16, borderRadius: radius.pill, alignItems: "center", justifyContent: "center" },
+  tabOn: { backgroundColor: c.surfaceSecondary, borderWidth: 1, borderColor: c.hairline },
+  row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.sm, backgroundColor: c.card, borderRadius: radius.md + 2, padding: spacing.md, borderWidth: 1, borderColor: c.hairline },
   rowMain: { flexDirection: "row", alignItems: "center", gap: spacing.sm, flex: 1, minWidth: 0 },
-  rowPills: { flexDirection: "row", flexWrap: "wrap", gap: 6, justifyContent: "flex-end", maxWidth: 150 },
+  rowPills: { flexDirection: "row", flexWrap: "wrap", gap: 6, justifyContent: "flex-end", maxWidth: 168 },
   dot: { width: 12, height: 12, borderRadius: 6 },
 }));

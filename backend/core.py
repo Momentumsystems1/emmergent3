@@ -30,6 +30,15 @@ ALGO = "HS256"
 bearer = HTTPBearer(auto_error=False)
 
 
+def public_base(request) -> str:
+    """Origin the client actually reached us through (preview or production), so shared links never point elsewhere."""
+    host = (request.headers.get("x-forwarded-host") or request.headers.get("host") or "").split(",")[0].strip()
+    if not host or host.startswith("localhost") or host.startswith("127.0.0.1"):
+        return APP_PUBLIC_URL
+    proto = (request.headers.get("x-forwarded-proto") or request.url.scheme).split(",")[0].strip()
+    return f"{proto}://{host}"
+
+
 def now() -> datetime:
     return datetime.now(timezone.utc)
 

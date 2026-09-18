@@ -22,6 +22,7 @@
     "expo-audio": "~57.0.5",
     "expo-battery": "~57.0.2",
     "expo-blur": "57.0.2",
+    "expo-clipboard": "~57.0.2",
     "expo-constants": "57.0.17",
     "expo-contacts": "~57.0.4",
     "expo-font": "57.0.3",

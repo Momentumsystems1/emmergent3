@@ -4,16 +4,25 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from bson import ObjectId
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from core import APP_PUBLIC_URL, Unavailable, current_user, db, now, oid, serialize
+from core import Unavailable, current_user, db, now, oid, public_base, serialize
 from routers.consent import effective_permissions, is_granted
 from routers.entitlements import require, user_entitlements
 
 router = APIRouter(tags=["groups"])
 
 PALETTE = ["#22D3EE", "#60A5FA", "#34D399", "#A78BFA", "#FBBF24", "#FB7185", "#F97316"]
+CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no I/O/0/1: readable over the phone
+
+
+async def _new_code() -> str:
+    """Short human-typable join code, unique among live invitations."""
+    while True:
+        code = "".join(secrets.choice(CODE_ALPHABET) for _ in range(6))
+        if not await db.invitations.find_one({"code": code, "status": {"$in": ["prepared", "dispatched", "open"]}}):
+            return code
 
 
 class GroupCreate(BaseModel):
@@ -153,7 +162,7 @@ async def mark_formed(group_id: str, user=Depends(current_user)):
 
 
 @router.post("/groups/{group_id}/invitations", status_code=201)
-async def invite(group_id: str, body: InviteCreate, user=Depends(current_user)):
+async def invite(group_id: str, body: InviteCreate, request: Request, user=Depends(current_user)):
     g = await _group_for(user, group_id, admin=True)
     ent = (await user_entitlements(user))["entitlements"]
     if body.membership not in ("fixed", "temporary") or body.channel not in ("whatsapp", "sms"):
@@ -171,11 +180,12 @@ async def invite(group_id: str, body: InviteCreate, user=Depends(current_user)):
         if not expires:
             raise HTTPException(400, "Un invitado temporal requiere fecha de expiración o duración")
     token = secrets.token_urlsafe(24)
+    code = await _new_code()
     inv = {"group_id": group_id, "group_name": g["name"], "name": body.name.strip(), "membership": body.membership,
-           "channel": body.channel, "token": token, "status": "prepared", "invited_by": str(user["_id"]),
+           "channel": body.channel, "token": token, "code": code, "status": "prepared", "invited_by": str(user["_id"]),
            "created_at": now(), "dispatched_at": None, "expires_at": expires,
            "responsible_adult_required": body.responsible_adult_required, "permissions": body.permissions, "phone": body.phone,
-           "link": f"{APP_PUBLIC_URL}/invite/{token}"}
+           "link": f"{public_base(request)}/invite/{token}"}
     ires = await db.invitations.insert_one(inv)
     used = await db.members.count_documents({"group_id": group_id})
     member = {"group_id": group_id, "user_id": None, "display_name": inv["name"], "role":
@@ -189,18 +199,26 @@ async def invite(group_id: str, body: InviteCreate, user=Depends(current_user)):
 
 
 @router.post("/groups/{group_id}/invite-link")
-async def group_invite_link(group_id: str, user=Depends(current_user)):
-    """Multi-use group link (share it in a WhatsApp/WeChat chat or group; everyone who taps it joins as a fixed member,
-    plan cap checked at acceptance). One open link per group; re-calling returns the same link."""
+async def group_invite_link(group_id: str, request: Request, user=Depends(current_user)):
+    """Multi-use group link + short join code (share it in a WhatsApp/WeChat chat or group; everyone who taps the link
+    or types the code joins as a fixed member, plan cap checked at acceptance). One open link per group."""
     g = await _group_for(user, group_id, admin=True)
     inv = await db.invitations.find_one({"group_id": group_id, "multi": True, "status": "open"})
+    base = public_base(request)
     if not inv:
         token = secrets.token_urlsafe(24)
         inv = {"group_id": group_id, "group_name": g["name"], "name": "", "membership": "fixed", "channel": "link", "token": token,
-               "status": "open", "multi": True, "invited_by": str(user["_id"]), "created_at": now(), "dispatched_at": None,
-               "expires_at": None, "uses": [], "link": f"{APP_PUBLIC_URL}/invite/{token}"}
+               "code": await _new_code(), "status": "open", "multi": True, "invited_by": str(user["_id"]), "created_at": now(),
+               "dispatched_at": None, "expires_at": None, "uses": [], "link": f"{base}/invite/{token}"}
         res = await db.invitations.insert_one(inv)
         inv["_id"] = res.inserted_id
+    else:
+        # Links created before a domain change (or before codes existed) are refreshed in place.
+        patch = {"link": f"{base}/invite/{inv['token']}", "group_name": g["name"]}
+        if not inv.get("code"):
+            patch["code"] = await _new_code()
+        await db.invitations.update_one({"_id": inv["_id"]}, {"$set": patch})
+        inv.update(patch)
     return serialize(inv)
 
 
@@ -259,6 +277,16 @@ async def invitation_by_token(token: str):
     out = serialize(inv)
     out.pop("token", None)
     return out
+
+
+@router.get("/invitations/by-code/{code}")
+async def invitation_by_code(code: str):
+    """Guests who cannot open a deep link (Expo Go, APK) type this 6-character code instead."""
+    inv = await db.invitations.find_one({"code": code.strip().upper(),
+                                         "status": {"$in": ["prepared", "dispatched", "open"]}})
+    if not inv:
+        raise HTTPException(404, "Código no válido o ya utilizado")
+    return {"token": inv["token"], "group_name": inv.get("group_name", ""), "status": inv["status"]}
 
 
 class Respond(BaseModel):

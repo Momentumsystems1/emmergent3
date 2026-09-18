@@ -8,6 +8,7 @@ import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { AuthProvider } from "@/src/auth";
+import { ConstructionBanner } from "@/src/components/ConstructionBanner";
 import { ErrorBoundary } from "@/src/components/error-boundary";
 import { ToastHost, UnavailableHost } from "@/src/components/ui";
 import { queryClient } from "@/src/query-client";
@@ -36,6 +37,7 @@ export default function RootLayout() {
                 <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.surface }, animation: "fade" }} />
                 <UnavailableHost />
                 <ToastHost />
+                <ConstructionBanner />
               </AuthProvider>
             </QueryClientProvider>
           </KeyboardProvider>

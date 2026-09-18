@@ -4,7 +4,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
 import { useState } from "react";
-import { ActivityIndicator, Linking, Pressable, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, Linking, Pressable, TextInput, View } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -26,6 +26,7 @@ export default function ProfileScreen() {
   const [color, setColor] = useState(user?.avatar?.color ?? AVATAR_COLORS[0]);
   const [uploading, setUploading] = useState(false);
   const [photoV, setPhotoV] = useState(0);
+  const [deleting, setDeleting] = useState(false);
   const consents = useQuery({ queryKey: ["consents"], queryFn: () => api<any[]>("/consents") });
   const ent = useQuery({ queryKey: ["entitlements"], queryFn: () => api<any>("/entitlements") });
   const save = useMutation({
@@ -60,6 +61,25 @@ export default function ProfileScreen() {
   const removePhoto = async () => {
     try { await api("/profile/photo", { method: "DELETE" }); await reload(); setPhotoV((v) => v + 1); toast("Foto eliminada"); }
     catch (e: any) { toast(e.message, "error"); }
+  };
+  const deleteAccount = () => {
+    Alert.alert(
+      "Eliminar cuenta",
+      "Se cerrará tu sesión y se eliminarán tu perfil, tu ubicación y tu pertenencia a los grupos. Esta acción no se puede deshacer.",
+      [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Eliminar", style: "destructive", onPress: async () => {
+            setDeleting(true);
+            try {
+              await api("/auth/account", { method: "DELETE" });
+              await signOut();
+              router.replace("/onboarding/account");
+            } catch (e: any) { toast(e.message, "error"); } finally { setDeleting(false); }
+          },
+        },
+      ],
+    );
   };
   return (
     <View style={s.root} testID="profile-screen">
@@ -97,6 +117,13 @@ export default function ProfileScreen() {
           <T style={{ fontSize: 12, color: colors.muted, marginTop: 4 }}>Sentinel respeta “Reducir movimiento” del sistema, usa color + icono + texto en todos los estados y objetivos táctiles de al menos 44 pt. El tema Día/Noche sigue la configuración del dispositivo.</T>
         </View>
         <Button testID="profile-signout" title="Cerrar sesión" variant="ghost" onPress={async () => { await signOut(); router.replace("/onboarding/account"); }} />
+        <View style={s.card}>
+          <T weight="bold">Eliminar cuenta</T>
+          <T style={{ fontSize: 12, color: colors.muted, marginTop: 4 }}>Borra tu perfil, tu ubicación y tu pertenencia a los grupos. No se puede deshacer.</T>
+          <View style={{ marginTop: spacing.sm }}>
+            <Button small testID="profile-delete-account" title="Eliminar mi cuenta" variant="ghost" icon="trash" loading={deleting} onPress={deleteAccount} />
+          </View>
+        </View>
       </KeyboardAwareScrollView>
     </View>
   );

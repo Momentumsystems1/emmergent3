@@ -162,6 +162,25 @@ async def me(user=Depends(current_user)):
     return public_user(user)
 
 
+@router.delete("/account", status_code=204)
+async def delete_account(user=Depends(current_user)):
+    """Soft-delete the account (App Store requirement) and revoke every session."""
+    uid = str(user["_id"])
+    ts = now()
+    await db.users.update_one({"_id": user["_id"]}, {"$set": {
+        "deleted_at": ts,
+        "email": f"deleted+{uid}@sentinel.invalid",
+        "profile.name": "Cuenta eliminada",
+        "photo": None,
+        "has_photo": False,
+    }})
+    await db.sessions.update_many({"user_id": uid, "revoked": False},
+                                  {"$set": {"revoked": True, "revoked_at": ts}})
+    await db.user_sessions.delete_many({"user_id": uid})
+    await db.positions_latest.delete_many({"user_id": uid})
+    await db.members.update_many({"user_id": uid}, {"$set": {"status": "removed", "removed_at": ts}})
+
+
 @router.get("/sessions")
 async def sessions(user=Depends(current_user)):
     cur = db.sessions.find({"user_id": str(user["_id"]), "revoked": False, "expires_at": {"$gt": now()}},

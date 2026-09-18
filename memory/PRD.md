@@ -92,3 +92,10 @@ Receptores del SOS = contactos de emergencia elegidos por el usuario (selector a
   - group-chip → fitGroup() encuadra a todo el grupo (MapCanvas prop `fit`/fitToCoordinates) + badge group-radius con radio en km.
   - Tarjetas del mapa semitransparentes (s.selCard=c.glass). Funciones no listas → "Próximamente" (ui.tsx UnavailableHost). Aviso honesto "solo con la app abierta" ya presente en el banner. (Verificado iteración 15, 7/7.)
 - **PRÓXIMO (acordado): Fase 2 SOS completo** — mantener pulsado 3s con anillo de progreso; pantalla roja emisor+receptores; datos (inicio/ubicación/timestamp/clima/sensores expo-sensors/batería) con actualización cada 20s en secuencia (SOS enviado→1→2→3…); código de 2 dígitos (defecto 78) solo el emisor desactiva; selector de contactos de emergencia (receptores elegidos); icono rojo central con foto del emisor + parpadeo + sonido en receptores; hospitales/comisarías + botón de emergencias en el mapa de ambos. Fase 4 quedada optimizada + punto intermedio. Fase 5 NAP (clave 20d7e5ae-...).
+- **Arreglo de DESPLIEGUE a producción (2026-06) COMPLETADO:**
+  - El deploy fallaba: el healthcheck del contenedor pedía `GET /health` (raíz) y la API solo tenía `/api/`. Añadidos `GET /health` y `GET /` a nivel raíz en `/app/backend/server.py` (verificado 200).
+  - Creación de índices + `seed_plans()` envueltos en try/except para que la API arranque aunque Atlas rechace cambios de índices.
+  - Eliminado el índice TTL destructivo `positions.at expireAfterSeconds=30d` (borraba histórico de posiciones automáticamente) → sustituido por índice compuesto `[user_id, at]`. TTL solo en sesiones.
+  - `/app/.gitignore`: quitadas las reglas `.env`, `.env.*`, `*.env` (bloqueaban los env necesarios en el deploy).
+  - Requisito App Store: borrado de cuenta en la app → `DELETE /api/auth/account` (soft-delete: deleted_at, email/nombre anonimizados, sesiones revocadas, positions_latest y membresías eliminadas) + tarjeta "Eliminar cuenta" en `profile.tsx` (testID profile-delete-account).
+  - Pendiente no bloqueante: textos legales marcados "PENDIENTE DE REVISIÓN LEGAL" (consent.py) antes de enviar a las tiendas.

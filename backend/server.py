@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.cors import CORSMiddleware
 
 from core import Unavailable, client, current_user, db, now
-from routers import auth, consent, coordination, entitlements, groups, people, providers, trips, media
+from routers import auth, consent, coordination, entitlements, groups, people, providers, trips, media, tts, messages
 from routers.providers import provider_status
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -17,7 +17,7 @@ app = FastAPI(title="Sentinel Family API")
 api = APIRouter(prefix="/api")
 
 for r in (auth.router, consent.router, entitlements.router, groups.router, people.router, providers.router,
-          coordination.router, trips.router, media.router):
+          coordination.router, trips.router, media.router, tts.router, messages.router):
     api.include_router(r)
 
 

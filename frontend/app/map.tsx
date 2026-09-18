@@ -103,6 +103,7 @@ export default function MapHome() {
     queryFn: () => api<Incident[]>(`/mobility/incidents?min_lat=${incCenter.lat - 0.12}&min_lng=${incCenter.lng - 0.16}&max_lat=${incCenter.lat + 0.12}&max_lng=${incCenter.lng + 0.16}`) });
   const [incSel, setIncSel] = useState<Incident | null>(null);
   const pendingTrips = useQuery({ queryKey: ["trips-pending"], refetchInterval: 15000, queryFn: () => api<any[]>("/trips/pending") });
+  const msgUnread = useQuery({ queryKey: ["msg-unread"], refetchInterval: 15000, queryFn: () => api<{ count: number }>("/messages/unread") });
   const [dismissedTrip, setDismissedTrip] = useState<string | null>(null);
   const tripInvite = (pendingTrips.data ?? []).find((t) => t.id !== dismissedTrip);
   const joinTrip = async () => {
@@ -225,6 +226,10 @@ export default function MapHome() {
             </View>
           </Pressable>
           <Pressable testID="search-bar-input" onPress={() => { closeAll(); router.push({ pathname: "/navigate", params: originParams }); }} style={s.barIcon} accessibilityLabel="¿A dónde vamos?"><Ionicons name="search" size={20} color={colors.onBrandPrimary} /></Pressable>
+          <Pressable testID="messages-button" onPress={() => { closeAll(); if (group) router.push({ pathname: "/chat/[group]", params: { group: group.id } }); else toast("Crea un grupo para enviar mensajes"); }} style={s.barIcon} accessibilityLabel="Mensajes">
+            <Ionicons name="chatbubbles" size={20} color={colors.onBrandPrimary} />
+            {msgUnread.data?.count ? <View style={s.msgBadge}><T weight="bold" style={{ fontSize: 10, color: colors.onError }}>{msgUnread.data.count > 9 ? "9+" : msgUnread.data.count}</T></View> : null}
+          </Pressable>
           <Pressable testID="menu-button" onPress={() => { closeAll(); setMainMenu(true); }} style={s.barIcon} accessibilityLabel="Menú"><Ionicons name="menu" size={22} color={colors.onBrandPrimary} /></Pressable>
         </View>
         {chipGroups.length ? <GroupsBar groups={chipGroups} activeId={group?.id} onPress={() => fitGroup()} style={{ marginTop: spacing.sm }} /> : null}
@@ -476,6 +481,7 @@ const useStyles = makeStyles((c) => ({
   barLeft: { flex: 1, flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingLeft: spacing.sm, height: 44 },
   barTxt: { fontSize: 15 },
   barIcon: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.18)" },
+  msgBadge: { position: "absolute", top: -2, right: -2, minWidth: 17, height: 17, borderRadius: 8.5, backgroundColor: c.error, alignItems: "center", justifyContent: "center", paddingHorizontal: 3, borderWidth: 1.5, borderColor: c.surface },
   sos: { borderWidth: 1.5, borderColor: "rgba(255,255,255,0.85)" },
   avatar: { backgroundColor: c.brandPrimary, width: 36, height: 36, borderRadius: 18, marginRight: 2 },
   badge: { position: "absolute", top: -2, right: -2, minWidth: 16, height: 16, borderRadius: 8, backgroundColor: c.pending, alignItems: "center", justifyContent: "center", paddingHorizontal: 3 },

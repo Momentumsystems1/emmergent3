@@ -33,4 +33,6 @@ export type MapCanvasProps = {
   fit?: { coords: LatLng[]; key: number };
   /** Reports the map's current rotation so the caller can show a compass. Native only. */
   onHeadingChange?: (heading: number) => void;
+  /** Bearing (deg) the camera should face when centering (navigator turn-by-turn follows the travel direction). Native only. */
+  cameraHeading?: number;
 };

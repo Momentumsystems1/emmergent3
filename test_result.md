@@ -177,3 +177,16 @@ frontend (map.tsx, MapCanvas.tsx, ui.tsx):
   - Tarjetas del mapa más semitransparentes (s.selCard usa c.glass).
   - UnavailableHost (ui.tsx): features no configuradas (V16, cámara, transporte público) ahora se muestran como "Próximamente" (no "SERVICIO NO CONFIGURADO") para la demo con inversores.
   - GPS a Accuracy.High (iteración 10).
+
+## Iteration 16 (2026-06) — Navegador con voz + Mensajes cortos (petición usuario, fork)
+backend:
+  - routers/tts.py: POST /api/tts {text} → genera voz (OpenAI tts-1 vía EMERGENT_LLM_KEY, emergentintegrations), cachea en db.tts_cache, devuelve {key}. GET /api/tts/{key}.mp3 sirve el audio (audio/mpeg). Sanitiza texto.
+  - routers/messages.py: POST /api/groups/{gid}/messages {recipient_ids[], text} (recipient_ids vacío = todos los miembros activos). GET /api/groups/{gid}/messages (hilo donde soy emisor o destinatario). GET /api/messages/inbox. GET /api/messages/unread {count}. POST /api/messages/{id}/read. POST /api/groups/{gid}/messages/read_all.
+  - server.py: registrados routers tts y messages.
+frontend:
+  - app/chat/[group].tsx (NUEVO): chat por grupo; selector de destinatarios (Todos o miembros concretos), presets rápidos, texto libre; burbujas; marca leído al abrir. Param `to` preselecciona un miembro.
+  - app/drive.tsx: navegador funcional: cámara sigue y GIRA en la dirección de marcha (heading de GPS o rumbo calculado) vía MapCanvas cameraHeading; voz de maniobras (utils/voice.ts, expo-audio) al iniciar ruta, al acercarse a cada maniobra (<300 m), recalcular y llegada; FAB drive-voice para silenciar. Avatar (foto) del usuario en su marcador (has_photo). (Voz/heading = solo build nativa.)
+  - src/components/MapCanvas.tsx + mapTypes.ts: nueva prop cameraHeading (rumbo de cámara al centrar). map.tsx sin cambios de comportamiento (cameraHeading=0).
+  - app/map.tsx: botón chatbubbles en cabecera (testID messages-button) con badge de no leídos (/messages/unread) → abre chat del grupo.
+  - MemberToolsSheet.tsx: acción "Mensaje" (member-tool-message) → chat con destinatario preseleccionado. MainMenu.tsx: item "Mensajes" (menu-messages).
+Credenciales: ana.demo@sentinelfamily.app / Sentinel2026! (grupo "Grupo 1"). Nota: para probar envío de mensajes hace falta un grupo con ≥2 miembros ACTIVOS.

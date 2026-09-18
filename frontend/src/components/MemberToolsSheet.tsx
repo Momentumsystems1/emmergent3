@@ -64,6 +64,7 @@ export function MemberToolsSheet({ member, mePos, groupId, onClose, onFocus }: {
             <Tool testID="member-tool-focus" icon="locate" label="Centrar" disabled={!located} onPress={() => { if (!located) return toast("Sin ubicación"); onFocus(member); onClose(); }} />
             <Tool testID="member-tool-go" icon="navigate" label="Ir hacia" primary disabled={!located} onPress={goDrive} />
             <Tool testID="member-tool-ping" icon="help-circle" label="¿Todo bien?" onPress={ping} />
+            <Tool testID="member-tool-message" icon="chatbubble" label="Mensaje" onPress={() => { if (!groupId) return toast("Crea un grupo primero"); onClose(); router.push({ pathname: "/chat/[group]", params: { group: groupId, to: member.user_id } }); }} />
             <Tool testID="member-tool-meet" icon="calendar" label="Quedar" onPress={() => { if (!groupId) return toast("Crea un grupo primero"); onClose(); router.push({ pathname: "/meeting/new", params: { group: groupId } }); }} />
             <Tool testID="member-tool-convoy" icon="car-sport" label="Convoy" onPress={() => { if (!groupId) return toast("Crea un grupo primero"); onClose(); router.push({ pathname: "/convoy/new", params: { group: groupId } }); }} />
             <Tool testID="member-tool-card" icon="person" label="Ficha" onPress={() => { onClose(); router.push(`/person/${member.member_id}?group=${groupId ?? ""}`); }} />

@@ -28,7 +28,7 @@ const LIGHT_STYLE = [
   { featureType: "poi", stylers: [{ visibility: "off" }] },
 ];
 
-export function MapCanvas({ people, pins = [], polyline, onPersonPress, center, zoomDelta = 0.005, onMapPress, onMapLongPress, onUserPan, selected, traffic, incidents = [], onIncidentPress, pitch3d = 55, followMode = "off", deviceHeading = 0, fit, onHeadingChange }: MapCanvasProps) {
+export function MapCanvas({ people, pins = [], polyline, onPersonPress, center, zoomDelta = 0.005, onMapPress, onMapLongPress, onUserPan, selected, traffic, incidents = [], onIncidentPress, pitch3d = 55, followMode = "off", deviceHeading = 0, fit, onHeadingChange, cameraHeading = 0 }: MapCanvasProps) {
   const { scheme, colors } = useTheme();
   const ref = useRef<MapView>(null);
   const tiles = `${BASE}/mobility/tiles`;
@@ -39,9 +39,9 @@ export function MapCanvas({ people, pins = [], polyline, onPersonPress, center, 
   // 3D perspective: pitched camera + buildings; the "me" marker is flat (anchored to the ground) so it rotates/scales with
   // the map's perspective and zoom instead of floating as a screen-space billboard.
   useEffect(() => {
-    if (center) ref.current?.animateCamera({ center: { latitude: center.lat, longitude: center.lng }, pitch: pitch3d, zoom, heading: 0 }, { duration: 600 });
+    if (center) ref.current?.animateCamera({ center: { latitude: center.lat, longitude: center.lng }, pitch: pitch3d, zoom, heading: cameraHeading }, { duration: 600 });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [center?.lat, center?.lng, center?.key]);
+  }, [center?.lat, center?.lng, center?.key, cameraHeading]);
   // Compass / heading mode: rotate the camera to follow the phone's heading while keeping the user centered.
   useEffect(() => {
     if (followMode === "heading" && me) ref.current?.animateCamera({ center: { latitude: me.lat!, longitude: me.lng! }, pitch: pitch3d, zoom, heading: deviceHeading }, { duration: 300 });

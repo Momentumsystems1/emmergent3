@@ -60,7 +60,8 @@
         {
           "locationWhenInUsePermission": "Compartir tu ubicación con tu grupo"
         }
-      ]
+      ],
+      "expo-audio"
     ],
     "experiments": {
       "typedRoutes": true

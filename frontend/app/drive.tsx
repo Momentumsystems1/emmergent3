@@ -19,6 +19,7 @@ import { useAuth } from "@/src/auth";
 import { Incident, INCIDENT_TYPE, incidentIcon, LatLng, MapCanvas, MapPerson } from "@/src/components/MapCanvas";
 import { SharingFab, SharingPanel } from "@/src/components/SharingFab";
 import { Button, showUnavailable, T, toast } from "@/src/components/ui";
+import { resetVoice, setVoiceEnabled, speak, stopVoice } from "@/src/utils/voice";
 import { fonts, makeStyles, radius, spacing, useTheme } from "@/src/theme";
 
 type Place = { name: string; lat: number; lng: number };
@@ -28,6 +29,7 @@ const MODE_LABEL: Record<string, string> = { car: "Coche", motorcycle: "Moto", b
 const fmtT = (s: number) => (s < 60 ? "<1 min" : s < 3600 ? `${Math.round(s / 60)} min` : `${Math.floor(s / 3600)} h ${Math.round((s % 3600) / 60)} min`);
 const fmtD = (m: number) => (m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(1)} km`);
 const dist = (a: LatLng, b: LatLng) => Math.hypot((a.lat - b.lat) * 111000, (a.lng - b.lng) * 111000 * Math.cos((a.lat * Math.PI) / 180));
+const bearing = (a: LatLng, b: LatLng) => { const φ1 = (a.lat * Math.PI) / 180, φ2 = (b.lat * Math.PI) / 180, Δλ = ((b.lng - a.lng) * Math.PI) / 180; const y = Math.sin(Δλ) * Math.cos(φ2), x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ); return (Math.atan2(y, x) * 180) / Math.PI; };
 const stepIcon = (t = "") => (/izquierda/i.test(t) ? "arrow-back" : /derecha/i.test(t) ? "arrow-forward" : /rotonda/i.test(t) ? "sync" : /destino|llegad/i.test(t) ? "flag" : "arrow-up");
 
 export default function Drive() {
@@ -49,13 +51,27 @@ export default function Drive() {
   const [picked, setPicked] = useState<Record<string, boolean>>({});
   const [arrived, setArrived] = useState(false);
   const lastReroute = useRef(0);
+  const [heading, setHeading] = useState(0);
+  const [voice, setVoice] = useState(true);
+  const prevPosRef = useRef<LatLng | null>(null);
+  const spokenStepRef = useRef<string>("");
+  const arrivedSpokeRef = useRef(false);
+  const routeStartRef = useRef<string>("");
 
   // ---- live device position (local; upload to the group happens only through the consent-gated hook on the map) ----
   useEffect(() => { Location.getForegroundPermissionsAsync().then((r) => setPerm(r.granted ? "granted" : r.status === "undetermined" ? "unknown" : r.canAskAgain ? "denied" : "blocked")).catch(() => setPerm("blocked")); }, []);
   useEffect(() => {
     if (perm !== "granted") return;
     let sub: Location.LocationSubscription | null = null;
-    Location.watchPositionAsync({ accuracy: Location.Accuracy.High, timeInterval: 3000, distanceInterval: 8 }, (l) => { const c = { lat: l.coords.latitude, lng: l.coords.longitude }; setPos(c); setOrigin((o) => o ?? c); setTick((t) => t + 1); }).then((x) => { sub = x; }).catch((e) => toast(e.message ?? "Sin acceso a la ubicación", "error"));
+    Location.watchPositionAsync({ accuracy: Location.Accuracy.High, timeInterval: 2000, distanceInterval: 6 }, (l) => {
+      const c = { lat: l.coords.latitude, lng: l.coords.longitude };
+      const gpsH = l.coords.heading;
+      const spd = l.coords.speed ?? 0;
+      if (gpsH != null && gpsH >= 0 && spd > 0.7) setHeading(gpsH);
+      else if (prevPosRef.current && dist(prevPosRef.current, c) > 5) setHeading(bearing(prevPosRef.current, c));
+      prevPosRef.current = c;
+      setPos(c); setOrigin((o) => o ?? c); setTick((t) => t + 1);
+    }).then((x) => { sub = x; }).catch((e) => toast(e.message ?? "Sin acceso a la ubicación", "error"));
     return () => { sub?.remove(); };
   }, [perm]);
   const requestPerm = async () => { const r = await Location.requestForegroundPermissionsAsync(); setPerm(r.granted ? "granted" : r.canAskAgain ? "denied" : "blocked"); };
@@ -78,10 +94,26 @@ export default function Drive() {
   /* eslint-disable react-hooks/set-state-in-effect -- re-route / arrival are derived from external GPS updates */
   useEffect(() => {
     if (!progress || !pos) return;
-    if (progress.off > 120 && Date.now() - lastReroute.current > 15000 && !route.isFetching) { lastReroute.current = Date.now(); setOrigin(pos); }
-    if (progress.remaining < 40 && !arrived) { setArrived(true); toast(`Has llegado a ${dest.name.split(",")[0]}`, "success"); }
-  }, [progress, pos, route.isFetching, arrived, dest.name]);
+    if (progress.off > 120 && Date.now() - lastReroute.current > 15000 && !route.isFetching) { lastReroute.current = Date.now(); setOrigin(pos); spokenStepRef.current = ""; if (voice) speak("Recalculando la ruta"); }
+    if (progress.next && progress.toNext != null && progress.toNext < 300 && progress.next.text && progress.next.text !== spokenStepRef.current) {
+      spokenStepRef.current = progress.next.text;
+      if (voice) speak(progress.toNext > 60 ? `En ${fmtD(progress.toNext)}, ${progress.next.text}` : progress.next.text);
+    }
+    if (progress.remaining < 40 && !arrived) { setArrived(true); toast(`Has llegado a ${dest.name.split(",")[0]}`, "success"); if (voice && !arrivedSpokeRef.current) { arrivedSpokeRef.current = true; speak(`Has llegado a ${dest.name.split(",")[0]}`); } }
+  }, [progress, pos, route.isFetching, arrived, dest.name, voice]);
   /* eslint-enable react-hooks/set-state-in-effect */
+
+  // Audio setup + cleanup; announce the very first instruction once a route is computed.
+  useEffect(() => { setVoiceEnabled(voice); if (!voice) stopVoice(); }, [voice]);
+  useEffect(() => () => { stopVoice(); }, []);
+  useEffect(() => {
+    if (!voice || !route.data || route.isError) return;
+    const sig = `${route.data.distance_m}-${(route.data.steps ?? []).length}`;
+    if (sig === routeStartRef.current) return;
+    routeStartRef.current = sig; resetVoice();
+    const first = (route.data.steps ?? []).find((st: any) => st.text)?.text;
+    speak(first ? `Iniciando ruta hacia ${dest.name.split(",")[0]}. ${first}` : `Iniciando ruta hacia ${dest.name.split(",")[0]}`);
+  }, [route.data, route.isError, voice, dest.name]);
 
   // ---- group / trip ----
   const groups = useQuery({ queryKey: ["groups"], queryFn: () => api<any[]>("/groups") });
@@ -118,7 +150,7 @@ export default function Drive() {
   const [incSel, setIncSel] = useState<Incident | null>(null);
 
   const people: MapPerson[] = [
-    ...(pos ? [{ member_id: "me-local", user_id: user?.id ?? "me", name: user?.profile?.name || "Tú", color: colors.brandPrimary, state: "shared", lat: pos.lat, lng: pos.lng, is_me: true }] : []),
+    ...(pos ? [{ member_id: "me-local", user_id: user?.id ?? "me", name: user?.profile?.name || "Tú", color: user?.avatar?.color ?? colors.brandPrimary, state: "shared", lat: pos.lat, lng: pos.lng, is_me: true, has_photo: user?.has_photo }] : []),
     ...(positions.data ?? []).filter((x) => !x.is_me && onTrip.has(x.user_id)),
   ];
   const pins = [
@@ -135,7 +167,7 @@ export default function Drive() {
 
   return (
     <View style={s.root} testID="drive-screen">
-      <MapCanvas people={people} pins={pins} polyline={geom as any} center={center} zoomDelta={0.006} onMapPress={() => { if (overlay || incSel) { setOverlay(null); setIncSel(null); } }} onMapLongPress={longPress} onUserPan={() => setFollow(false)}
+      <MapCanvas people={people} pins={pins} polyline={geom as any} center={center} zoomDelta={0.006} cameraHeading={follow ? heading : 0} onMapPress={() => { if (overlay || incSel) { setOverlay(null); setIncSel(null); } }} onMapLongPress={longPress} onUserPan={() => setFollow(false)}
         traffic incidents={onRoute} onIncidentPress={(i) => { setOverlay(null); setIncSel(i); }} />
 
       {/* Top: next instruction + ETA */}
@@ -244,6 +276,7 @@ export default function Drive() {
       </View>
       <View style={[s.fabs, { bottom: toolsBottom }]} pointerEvents="box-none">
         <SharingFab open={overlay === "sharing"} onPress={() => setOverlay(overlay === "sharing" ? null : "sharing")} />
+        <Pressable testID="drive-voice" onPress={() => setVoice((v) => !v)} style={[s.fab, voice && s.fabOn]} accessibilityLabel={voice ? "Silenciar voz" : "Activar voz"}><Ionicons name={voice ? "volume-high" : "volume-mute"} size={20} color={voice ? colors.onBrandPrimary : colors.onSurface} /></Pressable>
         <Pressable testID="drive-follow" onPress={() => { setFollow(true); setTick((t) => t + 1); }} style={[s.fab, follow && s.fabOn]} accessibilityLabel="Seguir mi posición"><Ionicons name="navigate" size={20} color={follow ? colors.onBrandPrimary : colors.onSurface} /></Pressable>
       </View>
     </View>

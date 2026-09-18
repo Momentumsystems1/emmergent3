@@ -18,6 +18,7 @@ export function MainMenu({ visible, onClose, groups }: { visible: boolean; onClo
       <T style={{ color: colors.muted, fontSize: 12, marginBottom: spacing.sm }}>{user?.email}</T>
       <Item testID="menu-profile" icon="person" label="Mi perfil" sub="Nombre, foto, color y avatar" onPress={() => go("/profile")} />
       <Item testID="menu-privacy" icon="lock-closed" label="Privacidad y visibilidad" sub="Qué compartes, con quién y con qué precisión" onPress={() => go("/privacy")} />
+      {groups.length ? <Item testID="menu-messages" icon="chatbubbles" label="Mensajes" sub="Envía mensajes cortos a uno o varios miembros" onPress={() => go(`/chat/${groups[0].id}`)} /> : null}
       {groups.map((g) => <Item key={g.id} testID={`menu-group-${g.id}`} icon="people" label={g.name} sub="Miembros, invitaciones y permisos" onPress={() => go(`/group/${g.id}`)} />)}
       <Item testID="menu-groups-manage" icon="add-circle" label="Crear o editar grupos" onPress={() => go("/onboarding/group")} />
       <Item testID="menu-plans" icon="card" label="Plan y límites" onPress={() => go("/plans")} />

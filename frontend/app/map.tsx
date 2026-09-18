@@ -133,9 +133,12 @@ export default function MapHome() {
   const otherMembers = served.filter((p) => !p.is_me);
   const name = user?.profile?.name ?? "";
   const mePos: LatLng | null = meServed ? { lat: meServed.lat!, lng: meServed.lng! } : myPos;
-  const people: MapPerson[] = meServed || !mePos
-    ? served
-    : [...served.filter((p) => !p.is_me), { member_id: "me-local", user_id: user?.id ?? "me", name: name || "Tú", color: colors.brandPrimary, state: "shared", lat: mePos.lat, lng: mePos.lng, is_me: true, has_photo: user?.has_photo }];
+  // Always render "me" as ONE marker with a stable id ("me-local") so it never remounts when server positions arrive,
+  // and take has_photo/color from /auth/me (authoritative) so the avatar can't flicker back to the coloured initial.
+  const meEntry: MapPerson | null = mePos
+    ? { member_id: "me-local", user_id: user?.id ?? "me", name: name || "Tú", color: user?.avatar?.color ?? colors.brandPrimary, state: "shared", lat: mePos.lat, lng: mePos.lng, is_me: true, has_photo: user?.has_photo }
+    : null;
+  const people: MapPerson[] = [...served.filter((p) => !p.is_me), ...(meEntry ? [meEntry] : [])];
   // one-shot centering on the first GPS fix
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { if (mePos && !focus) { setFocus({ lat: mePos.lat, lng: mePos.lng, key: 1 }); setFollowMode("follow"); } }, [mePos?.lat, mePos?.lng, focus]);

@@ -99,3 +99,9 @@ Receptores del SOS = contactos de emergencia elegidos por el usuario (selector a
   - `/app/.gitignore`: quitadas las reglas `.env`, `.env.*`, `*.env` (bloqueaban los env necesarios en el deploy).
   - Requisito App Store: borrado de cuenta en la app → `DELETE /api/auth/account` (soft-delete: deleted_at, email/nombre anonimizados, sesiones revocadas, positions_latest y membresías eliminadas) + tarjeta "Eliminar cuenta" en `profile.tsx` (testID profile-delete-account).
   - Pendiente no bloqueante: textos legales marcados "PENDIENTE DE REVISIÓN LEGAL" (consent.py) antes de enviar a las tiendas.
+- **Entrada de INVITADOS (2026-06) COMPLETADO + testeado (iteración 17):**
+  - Los enlaces de invitación se construyen con el host real de la petición (`public_base()` en core.py, X-Forwarded-Host/Proto) en vez de `APP_PUBLIC_URL` fijo → sirven igual en preview y en producción. Aplicado a `/groups/{id}/invitations`, `/groups/{id}/invite-link` y `deep_link` de quedadas.
+  - **Código de 6 caracteres** por invitación (alfabeto sin I/O/0/1) para invitados que no pueden abrir enlaces profundos (Expo Go / APK): `GET /api/invitations/by-code/{code}` (case-insensitive) → devuelve el token → pantalla `/invite/<token>`.
+  - Nueva pantalla `app/join.tsx` ("Me han invitado · tengo un código") accesible desde welcome (`welcome-join-code`) y desde login/registro (`account-join-code`).
+  - `InviteOptions`: tarjeta con el código (tocar = copiar, expo-clipboard) y el texto compartido por WhatsApp/otras apps incluye enlace **y** código. El enlace multiuso es idempotente (mismo código al reabrir) y se refresca si cambia el dominio.
+  - Fix: `DELETE /api/auth/account` fallaba (500) con usuarios recién registrados (`profile: null`) → ahora `$set {"profile": {...}}`. Verificado 204 + 401 posterior.

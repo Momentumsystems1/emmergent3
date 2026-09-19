@@ -170,7 +170,7 @@ async def delete_account(user=Depends(current_user)):
     await db.users.update_one({"_id": user["_id"]}, {"$set": {
         "deleted_at": ts,
         "email": f"deleted+{uid}@sentinel.invalid",
-        "profile.name": "Cuenta eliminada",
+        "profile": {"name": "Cuenta eliminada"},
         "photo": None,
         "has_photo": False,
     }})

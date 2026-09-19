@@ -3,6 +3,7 @@
 //  - Device contacts picker (expo-contacts, contextual permission) → one invitation per contact, WhatsApp opened with their number.
 // WhatsApp/WeChat expose no API to read contacts or group members; we never pretend otherwise.
 import Ionicons from "@react-native-vector-icons/ionicons";
+import * as Clipboard from "expo-clipboard";
 import * as Contacts from "expo-contacts";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AppState, Linking, Platform, Pressable, Share, TextInput, View } from "react-native";
@@ -20,23 +21,44 @@ export function InviteOptions({ groupId, groupName, onChanged }: { groupId: stri
   const s = useStyles(); const { colors } = useTheme();
   const [picker, setPicker] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
+  const [code, setCode] = useState<string | null>(null);
+  const [joinLink, setJoinLink] = useState<string | null>(null);
 
-  const link = async () => {
-    const inv = await api<Invitation>(`/groups/${groupId}/invite-link`, { method: "POST" });
-    return `Únete a mi grupo "${groupName}" en Sentinel Family. Toca el enlace para entrar: ${inv.link}`;
+  const ensureLink = async () => {
+    const inv = await api<Invitation & { code?: string }>(`/groups/${groupId}/invite-link`, { method: "POST" });
+    setCode(inv.code ?? null); setJoinLink(inv.link);
+    return inv;
   };
+  useEffect(() => { api<Invitation & { code?: string }>(`/groups/${groupId}/invite-link`, { method: "POST" }).then((inv) => { setCode(inv.code ?? null); setJoinLink(inv.link); }).catch(() => null); }, [groupId]);
+
+  const shareText = (inv: Invitation & { code?: string }) =>
+    `Únete a mi grupo "${groupName}" en Sentinel Family.\n\n1) Toca el enlace: ${inv.link}\n2) O abre Sentinel y entra con el código: ${inv.code ?? ""}`.trim();
+
   const viaWhatsApp = async () => {
     setBusy("wa");
-    try { await Linking.openURL(`https://wa.me/?text=${encodeURIComponent(await link())}`); toast("Elige un chat o un grupo de WhatsApp; quien toque el enlace entra al grupo"); }
+    try { const inv = await ensureLink(); await Linking.openURL(`https://wa.me/?text=${encodeURIComponent(shareText(inv))}`); toast("Elige un chat o un grupo de WhatsApp; quien toque el enlace entra al grupo"); }
     catch (e: any) { toast(e.message ?? "No se pudo abrir WhatsApp", "error"); } finally { setBusy(null); }
   };
   const viaShare = async () => {
     setBusy("share");
-    try { const text = await link(); if (Platform.OS === "web") { await Linking.openURL(`mailto:?body=${encodeURIComponent(text)}`); } else { await Share.share({ message: text }); } }
+    try { const text = shareText(await ensureLink()); if (Platform.OS === "web") { await Linking.openURL(`mailto:?body=${encodeURIComponent(text)}`); } else { await Share.share({ message: text }); } }
     catch (e: any) { toast(e.message ?? "No se pudo compartir", "error"); } finally { setBusy(null); }
+  };
+  const copyCode = async () => {
+    const inv = code && joinLink ? { code, link: joinLink } as any : await ensureLink();
+    await Clipboard.setStringAsync(inv.code ?? "");
+    toast("Código copiado", "success");
   };
   return (
     <View style={{ gap: spacing.sm }} testID="invite-options">
+      <Pressable testID="invite-code-card" onPress={copyCode} style={s.codeCard}>
+        <View style={{ flex: 1 }}>
+          <T style={{ fontSize: 11, color: colors.muted, letterSpacing: 1 }}>CÓDIGO DEL GRUPO</T>
+          <T weight="bold" testID="invite-code-value" style={{ fontSize: 24, letterSpacing: 6, color: colors.brandPrimary }}>{code ?? "······"}</T>
+          <T style={{ fontSize: 11, color: colors.muted }}>Se escribe en Sentinel → “Me han invitado”. Útil si el enlace no abre la app.</T>
+        </View>
+        <Ionicons name="copy-outline" size={20} color={colors.muted} />
+      </Pressable>
       <View style={{ flexDirection: "row", gap: spacing.sm }}>
         <Pressable testID="invite-link-whatsapp" onPress={viaWhatsApp} disabled={!!busy} style={[s.opt, { flex: 1 }]}><Ionicons name="logo-whatsapp" size={18} color={colors.success} /><T weight="semibold" style={{ fontSize: 13 }}>Enlace por WhatsApp</T></Pressable>
         <Pressable testID="invite-link-share" onPress={viaShare} disabled={!!busy} style={[s.opt, { flex: 1 }]}><Ionicons name="share-social" size={18} color={colors.brandSecondary} /><T weight="semibold" style={{ fontSize: 13 }}>WeChat y otras</T></Pressable>
@@ -150,6 +172,7 @@ function ContactsPicker({ visible, onClose, groupId, groupName }: { visible: boo
 }
 
 const useStyles = makeStyles((c) => ({
+  codeCard: { flexDirection: "row", alignItems: "center", gap: spacing.md, padding: spacing.md, borderRadius: radius.md, backgroundColor: c.surfaceTertiary, borderWidth: 1, borderColor: c.brandPrimary },
   opt: { flexDirection: "row", alignItems: "center", gap: spacing.sm, minHeight: 48, paddingHorizontal: spacing.md, borderRadius: radius.md, backgroundColor: c.surfaceTertiary, borderWidth: 1, borderColor: c.border },
   input: { height: 48, borderRadius: radius.md, backgroundColor: c.surfaceSecondary, borderWidth: 1, borderColor: c.border, paddingHorizontal: spacing.md, fontFamily: fonts.regular, fontSize: 15, color: c.onSurface, marginTop: spacing.md },
   row: { flexDirection: "row", alignItems: "center", gap: spacing.md, paddingVertical: 10, borderBottomWidth: 1, borderColor: c.divider },

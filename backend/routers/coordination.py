@@ -3,10 +3,10 @@ import logging
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from core import APP_PUBLIC_URL, Unavailable, current_user, db, now, oid, serialize
+from core import Unavailable, current_user, db, now, oid, public_base, serialize
 from routers.consent import effective_permissions, is_granted
 from routers.entitlements import require
 from routers.providers import geocode, route
@@ -56,7 +56,7 @@ class MeetingCreate(BaseModel):
 
 
 @router.post("/meetings", status_code=201)
-async def create_meeting(body: MeetingCreate, user=Depends(current_user)):
+async def create_meeting(body: MeetingCreate, request: Request, user=Depends(current_user)):
     await _member(user, body.group_id)
     await require(user, "meetings", "Las quedadas no están incluidas en tu plan.")
     dest = None
@@ -83,7 +83,7 @@ async def create_meeting(body: MeetingCreate, user=Depends(current_user)):
            "destination_state": destination_state if dest else ("none" if not body.place_query else "geocode_failed")}
     res = await db.meetings.insert_one(doc)
     doc["_id"] = res.inserted_id
-    doc["deep_link"] = f"{APP_PUBLIC_URL}/meeting/{res.inserted_id}"
+    doc["deep_link"] = f"{public_base(request)}/meeting/{res.inserted_id}"
     await db.meetings.update_one({"_id": res.inserted_id}, {"$set": {"deep_link": doc["deep_link"]}})
     return serialize(doc)
 

@@ -1,0 +1,39 @@
+{
+  "summary": "Iteration 17 — Guest onboarding via 6-char join code. Backend: 9/10 pytest cases pass. Verified (a) POST /groups/{id}/invite-link returns {link, code} with request host and is idempotent (same code L58L84 across calls); (b) GET /invitations/by-code/{CODE} works with uppercase AND lowercase; invalid returns 404; (c) full guest end-to-end (register → by-code → accept) — new user joins 'Grupo 1', appears active in owner's GET /groups/{id}, and guest sees the group in GET /groups; (d) per-contact invitations POST /groups/{id}/invitations include 'code' + link with correct host; (e) root health GET / and GET /health return 200. FAIL: DELETE /api/auth/account returns 500 for freshly registered users (profile is null → Mongo WriteError \"Cannot create field 'name' in element {profile: null}\"). Frontend (Expo web, mobile viewport 390x844): /join accepts invalid code with error toast and stays on /join; /join accepts a valid code (lowercase!) and navigates to /invite/<token> showing 'Grupo 1'; welcome-join-code and account-join-code both navigate to /join; group screen for owner ana.demo shows invite-code-card with the real code 'L58L84' (not placeholder ······). No deprecated packages detected (repo already uses expo-audio). Web-only warnings (shadow*, pointerEvents) ignored per main agent note.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "DELETE /api/auth/account", "issue": "500 Internal Server Error for users whose profile field is null (freshly registered users). MongoDB rejects $set on 'profile.name' when profile is null. This blocks the App Store account-deletion requirement for any user who has not completed the profile onboarding step. Fix: set the whole 'profile' subdocument (e.g. {\"profile\": {\"name\": \"Cuenta eliminada\"}}) or use two-stage update, or $set only when profile exists. File: /app/backend/routers/auth.py:170-176.", "priority": "HIGH"}
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "welcome", "issues": ["The 'Me han invitado · tengo un código' link (testID welcome-join-code) sits directly under 'Ya tengo cuenta' and is fully covered by the fixed 'App en proceso de construcción' toast at the bottom on a 390x844 viewport (needs manual dismissal via the × button or scroll). Consider raising the CTA cluster above the toast or reducing the toast height so the third link is tappable without dismissing the toast."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration17_guest_join.py",
+    "/app/test_reports/pytest/it17_results.xml"
+  ],
+  "action_items": [
+    "Fix DELETE /api/auth/account: pymongo WriteError when profile is null. Change the $set payload in /app/backend/routers/auth.py to either (a) $set: {..., 'profile': {'name': 'Cuenta eliminada'}} replacing the whole subdocument, or (b) $unset the field, or (c) do a two-step update (ensure profile is an object first, then set name).",
+    "Optional: raise welcome-screen CTA stack above the build-notice toast (or auto-dismiss the toast) so welcome-join-code is tappable without needing to dismiss the toast first."
+  ],
+  "critical_code_review_comments": [
+    "core.public_base falls back to APP_PUBLIC_URL for localhost/127.0.0.1 hosts only — good; production requests always use X-Forwarded-Host/Proto correctly (verified: link points to sentinel-audit-6.preview.emergentagent.com).",
+    "invitation_by_code correctly does case-insensitive lookup via .strip().upper() and filters by live statuses (prepared/dispatched/open) — good.",
+    "_new_code loops until unique among live invitations — no infinite-loop risk in practice given 32^6 space, but consider a safety counter."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration17_guest_join.py (new)"
+  ],
+  "success_rate": {"backend": "90% (9/10)", "frontend": "100% (all requested flows work)"},
+  "seed_data_creation": "Test creates one throwaway guest per run (TEST_guest_<hex>@sentinelfamily.app) and joins it to Grupo 1; the account-deletion test creates and deletes another throwaway. No modification of ana.demo or owner@ accounts.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Only real failure is DELETE /api/auth/account 500 when profile is null. All other requested cases pass. After fix, re-run pytest /app/backend/tests/test_iteration17_guest_join.py::TestAccountDeletion — expected to go from 1 fail → pass. Frontend /join flow is fully covered.",
+  "rca_of_issue": "DELETE /api/auth/account uses `db.users.update_one({...}, {\"$set\": {..., \"profile.name\": \"Cuenta eliminada\", ...}})`. Fresh users created via POST /auth/register have `profile: None` in Mongo (see register() in routers/auth.py:78). MongoDB's dotted-path $set can only set a nested field if the parent path is a document; it cannot create a field inside `null`. Result: `pymongo.errors.WriteError: Cannot create field 'name' in element {profile: null}` → 500 to the client. Fix: replace the whole subdocument with `\"profile\": {\"name\": \"Cuenta eliminada\"}` in the $set payload (still soft-deletes and anonymises the user, and works for both null-profile and existing-profile users). Reproduction: register a new user with random email + Sentinel2026!, DELETE /api/auth/account with that bearer → 500."
+}

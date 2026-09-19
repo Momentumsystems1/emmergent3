@@ -71,6 +71,9 @@ export default function Account() {
             <T weight="semibold" style={{ fontSize: 15 }}>{mode === "register" ? "Continuar con Google" : "Entrar con Google"}</T>
           </Pressable>
           <T style={{ color: colors.muted, fontSize: 11, textAlign: "center" }}>Microsoft y Supabase: SERVICIO NO CONFIGURADO (pendiente de credenciales)</T>
+          <Pressable testID="account-join-code" onPress={() => router.push("/join")} style={{ minHeight: 44, alignItems: "center", justifyContent: "center" }}>
+            <T weight="semibold" style={{ color: colors.brandPrimary, fontSize: 14 }}>Me han invitado · tengo un código</T>
+          </Pressable>
         </View>
       </OnboardingScreen>
     </KeyboardAvoidingView>

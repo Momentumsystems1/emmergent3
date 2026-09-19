@@ -4,10 +4,11 @@ import { Linking, Platform } from "react-native";
 
 import { api } from "@/src/api";
 
-export type Invitation = { id: string; name: string; channel: "whatsapp" | "sms" | "link"; status: string; phone?: string | null; multi?: boolean; link: string; group_name: string; membership: string; created_at?: string; dispatched_at?: string | null };
+export type Invitation = { id: string; name: string; channel: "whatsapp" | "sms" | "link"; status: string; phone?: string | null; multi?: boolean; code?: string; link: string; group_name: string; membership: string; created_at?: string; dispatched_at?: string | null };
 
 export function inviteText(inv: Invitation) {
-  return `Hola ${inv.name}, te invito a mi grupo "${inv.group_name}" en Sentinel Family. Abre este enlace para aceptar: ${inv.link}`;
+  const code = inv.code ? `\n\nSi el enlace no abre la app, entra en Sentinel → “Me han invitado” y escribe el código: ${inv.code}` : "";
+  return `Hola ${inv.name}, te invito a mi grupo "${inv.group_name}" en Sentinel Family. Abre este enlace para aceptar: ${inv.link}${code}`;
 }
 
 /** Returns a truthful state label. Never "Mensaje enviado" unless the OS reported it. */

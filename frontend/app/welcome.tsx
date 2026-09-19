@@ -12,7 +12,7 @@ export default function Welcome() {
   return (
     <ImageBackground source={require("../assets/images/welcome-bg.png")} style={s.root} resizeMode="cover" testID="welcome-screen">
       <LinearGradient colors={["transparent", "rgba(5,12,25,0.55)", "rgba(5,12,25,0.95)"]} locations={[0.35, 0.65, 1]} style={s.shade} />
-      <View style={[s.content, { paddingTop: insets.top + spacing.xxl, paddingBottom: insets.bottom + spacing.xl }]}>
+      <View style={[s.content, { paddingTop: insets.top + spacing.xxl, paddingBottom: insets.bottom + spacing.xl + 72 }]}>
         <View style={s.brand}>
           <Image source={require("../assets/images/logo.png")} style={s.logo} testID="welcome-logo" />
           <T weight="bold" style={s.title}>Sentinel Family</T>
@@ -21,6 +21,7 @@ export default function Welcome() {
         <View style={{ gap: spacing.sm }}>
           <Pressable testID="welcome-start" onPress={() => router.push("/onboarding/terms")} style={s.cta}><T weight="bold" style={{ color: colors.onBrandPrimary, fontSize: 16 }}>Empezar</T></Pressable>
           <Pressable testID="welcome-login" onPress={() => router.push("/onboarding/account")} style={s.ghost}><T weight="semibold" style={{ color: "#FFFFFF", fontSize: 15 }}>Ya tengo cuenta</T></Pressable>
+          <Pressable testID="welcome-join-code" onPress={() => router.push("/join")} style={s.link}><T weight="semibold" style={{ color: colors.brandPrimary, fontSize: 14 }}>Me han invitado · tengo un código</T></Pressable>
         </View>
       </View>
     </ImageBackground>
@@ -37,4 +38,5 @@ const useStyles = makeStyles((c) => ({
   tagline: { color: "rgba(255,255,255,0.85)", textAlign: "center", marginTop: spacing.sm, fontSize: 15, lineHeight: 22, maxWidth: 320 },
   cta: { height: 54, borderRadius: radius.lg, backgroundColor: c.brandPrimary, alignItems: "center", justifyContent: "center" },
   ghost: { height: 50, borderRadius: radius.lg, borderWidth: 1, borderColor: "rgba(255,255,255,0.5)", alignItems: "center", justifyContent: "center" },
+  link: { minHeight: 44, alignItems: "center", justifyContent: "center" },
 }));

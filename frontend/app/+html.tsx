@@ -14,11 +14,11 @@ export default function Root({ children }: PropsWithChildren) {
           name="viewport"
           content="width=device-width, initial-scale=1, shrink-to-fit=no, viewport-fit=cover"
         />
-        <title>Sentinel Family</title>
-        <meta name="description" content="Sentinel Family — movilidad, coordinación y seguridad para los tuyos. Tu privacidad, siempre en tus manos." />
+        <title>My Cluster</title>
+        <meta name="description" content="My Cluster — movilidad, coordinación y seguridad para los tuyos. Tu privacidad, siempre en tus manos." />
         <meta name="theme-color" content="#060B16" />
         <meta name="color-scheme" content="light dark" />
-        <meta property="og:title" content="Sentinel Family" />
+        <meta property="og:title" content="My Cluster" />
         <meta property="og:description" content="Movilidad, coordinación y seguridad para los tuyos." />
         <meta property="og:type" content="website" />
         {/*

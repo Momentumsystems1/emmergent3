@@ -14,13 +14,13 @@ h = h.replace('<html lang="en">', '<html lang="es">');
 h = h.replace(
   '<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />',
   '<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no, viewport-fit=cover" />\n' +
-    '    <meta name="description" content="Sentinel Family — movilidad, coordinación y seguridad para los tuyos. Tu privacidad, siempre en tus manos." />\n' +
+    '    <meta name="description" content="My Cluster — movilidad, coordinación y seguridad para los tuyos. Tu privacidad, siempre en tus manos." />\n' +
     '    <meta name="theme-color" content="#060B16" />\n' +
     '    <meta name="color-scheme" content="light dark" />'
 );
 
 const shell = `
-    <style id="sentinel-shell">
+    <style id="mycluster-shell">
       html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; text-rendering: optimizeLegibility; }
       body {
         background-color: #04070F;
@@ -50,6 +50,6 @@ const shell = `
       }
     </style>
 `;
-if (!h.includes('id="sentinel-shell"')) h = h.replace("</head>", shell + "</head>");
+if (!h.includes('id="mycluster-shell"')) h = h.replace("</head>", shell + "</head>");
 fs.writeFileSync(file, h);
 console.log("patched", file);

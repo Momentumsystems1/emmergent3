@@ -1,82 +1,146 @@
-// Web renderer: react-native-maps has no web build, so we render a REAL Mapbox static image (proxied by the backend)
-// and project people / incidents on top with Web-Mercator math. Tap → coordinate (so point selection works on web too).
-// Zoom buttons; no panning (static image). Traffic flow tiles are native-only (static API renders one tileset).
-import Ionicons from "@react-native-vector-icons/ionicons";
-import React, { useEffect, useMemo, useState } from "react";
-import { Image, Pressable, Text, View } from "react-native";
+// Web renderer: REAL interactive Google Map (Maps JavaScript API).
+// This file is only bundled for web — plain DOM is intentional.
+import React, { useEffect, useRef } from "react";
 
-import { BASE } from "@/src/api";
-import { incidentIcon, LatLng, MapCanvasProps } from "@/src/components/mapTypes";
-import { PersonAvatar } from "@/src/components/orbs";
-import { fonts, makeStyles, radius, spacing, useTheme } from "@/src/theme";
+import { incidentIcon, LatLng, MapCanvasProps, MapPerson } from "@/src/components/mapTypes";
 
 export * from "@/src/components/mapTypes";
 
-const TILE = 256;
-const zoomFor = (delta: number) => Math.max(3, Math.min(19, Math.round(Math.log2(180 / delta))));
-const mx = (lng: number, z: number) => ((lng + 180) / 360) * TILE * 2 ** z;
-const my = (lat: number, z: number) => { const r = (lat * Math.PI) / 180; return ((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * TILE * 2 ** z; };
-const unx = (x: number, z: number) => (x / (TILE * 2 ** z)) * 360 - 180;
-const uny = (y: number, z: number) => { const n = Math.PI - (2 * Math.PI * y) / (TILE * 2 ** z); return (180 / Math.PI) * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n))); };
-const hex = (c?: string) => (c && /^#[0-9a-fA-F]{6}$/.test(c) ? c.slice(1) : "E11D48");
+const KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_KEY ?? "";
 
-export function MapCanvas({ people, pins = [], polyline, onPersonPress, center, zoomDelta = 0.01, onMapPress, onMapLongPress, selected, incidents = [], onIncidentPress }: MapCanvasProps) {
-  const s = useStyles();
-  const { colors, scheme } = useTheme();
-  const [size, setSize] = useState({ w: 0, h: 0 });
-  const located = people.filter((p) => p.state === "shared" && p.lat != null);
-  const me = located.find((p) => p.is_me);
-  const fallback: LatLng = me ? { lat: me.lat!, lng: me.lng! } : located[0] ? { lat: located[0].lat!, lng: located[0].lng! } : pins[0] ? { lat: pins[0].lat, lng: pins[0].lng } : { lat: 40.4168, lng: -3.7038 };
-  const [view, setView] = useState<{ lat: number; lng: number; zoom: number }>({ ...(center ?? fallback), zoom: center ? zoomFor(zoomDelta) : 12 });
-  // eslint-disable-next-line react-hooks/set-state-in-effect, react-hooks/exhaustive-deps -- camera follows the caller's center like animateToRegion on native
-  useEffect(() => { if (center) setView({ lat: center.lat, lng: center.lng, zoom: zoomFor(zoomDelta) }); }, [center?.lat, center?.lng, center?.key]);
-  const [loaded, setLoaded] = useState(false);
-
-  const z = view.zoom, cx = mx(view.lng, z), cy = my(view.lat, z);
-  const proj = (lat: number, lng: number) => ({ left: size.w / 2 + (mx(lng, z) - cx), top: size.h / 2 + (my(lat, z) - cy) });
-  const unproj = (px: number, py: number): LatLng => ({ lat: uny(cy + (py - size.h / 2), z), lng: unx(cx + (px - size.w / 2), z) });
-  const uri = useMemo(() => {
-    if (!size.w || !size.h) return null;
-    const pinStr = [...pins.map((p) => `${p.lat},${p.lng},${hex(p.color)}`), ...(selected ? [`${selected.lat},${selected.lng},${hex(colors.brandPrimary)}`] : [])].join(";");
-    const pathStr = polyline && polyline.length > 1 ? polyline.filter((_, i) => i % Math.max(1, Math.floor(polyline.length / 60)) === 0).concat([polyline[polyline.length - 1]]).map(([a, b]) => `${a},${b}`).join(";") : "";
-    return `${BASE}/mobility/static.png?lat=${view.lat}&lng=${view.lng}&zoom=${z}&w=${Math.round(size.w)}&h=${Math.round(size.h)}&dark=${scheme === "dark"}&pins=${encodeURIComponent(pinStr)}&path=${encodeURIComponent(pathStr)}`;
-  }, [size.w, size.h, view.lat, view.lng, z, pins, selected, polyline, scheme, colors.brandPrimary]);
-  const at = (e: any): LatLng => { const n = e.nativeEvent ?? {}; return unproj(n.offsetX ?? n.locationX ?? size.w / 2, n.offsetY ?? n.locationY ?? size.h / 2); };
-  const inView = (lat: number, lng: number) => { const p = proj(lat, lng); return p.left > -30 && p.left < size.w + 30 && p.top > -30 && p.top < size.h + 30; };
-
-  return (
-    <Pressable style={s.root} testID="map-canvas" onLayout={(e) => setSize({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}
-      onPress={(e) => onMapPress?.(at(e))} onLongPress={(e) => onMapLongPress?.(at(e))}>
-      {uri ? <Image source={{ uri }} style={{ position: "absolute", left: 0, top: 0, width: size.w, height: size.h }} onLoad={() => setLoaded(true)} onError={() => setLoaded(false)} testID="map-static-image" /> : null}
-      {!loaded ? <View style={s.loading} pointerEvents="none"><Text style={s.noticeTxt}>Cargando mapa…</Text></View> : null}
-      {incidents.filter((i) => inView(i.lat, i.lng)).map((i) => (
-        <Pressable key={i.id} testID={`map-incident-${i.id}`} onPress={() => onIncidentPress?.(i)} style={[s.abs, proj(i.lat, i.lng), { marginLeft: -13, marginTop: -13 }]}>
-          <View style={[s.inc, { backgroundColor: i.road_closed ? colors.error : colors.warning }]}><Ionicons name={incidentIcon(i) as any} size={14} color={i.road_closed ? colors.onError : colors.onWarning} /></View>
-        </Pressable>
-      ))}
-      {located.filter((p) => inView(p.lat!, p.lng!)).map((p) => (
-        <Pressable key={p.member_id} testID={`map-person-${p.member_id}`} onPress={() => onPersonPress?.(p)} style={[s.abs, proj(p.lat!, p.lng!), { marginLeft: -22, marginTop: -30 }]}>
-          <PersonAvatar name={p.name} color={p.color} state="shared" size={p.is_me ? 46 : 40} />
-          <Text style={s.pinTxt}>{p.name}</Text>
-        </Pressable>
-      ))}
-      <View style={s.zoom} testID="map-zoom">
-        <Pressable testID="map-zoom-in" onPress={() => setView((v) => ({ ...v, zoom: Math.min(19, v.zoom + 1) }))} style={s.zBtn}><Ionicons name="add" size={18} color={colors.onSurface} /></Pressable>
-        <Pressable testID="map-zoom-out" onPress={() => setView((v) => ({ ...v, zoom: Math.max(3, v.zoom - 1) }))} style={s.zBtn}><Ionicons name="remove" size={18} color={colors.onSurface} /></Pressable>
-      </View>
-      <View style={s.notice} pointerEvents="none" testID="map-web-notice"><Ionicons name="map" size={12} color={colors.muted} /><Text style={s.noticeTxt}>Mapbox · vista estática (web)</Text></View>
-    </Pressable>
-  );
+let loaderPromise: Promise<any> | null = null;
+function loadGoogle(): Promise<any> {
+  if (loaderPromise) return loaderPromise;
+  loaderPromise = new Promise((resolve, reject) => {
+    const w = window as any;
+    if (w.google?.maps) return resolve(w.google);
+    const s = document.createElement("script");
+    s.src = `https://maps.googleapis.com/maps/api/js?key=${KEY}&language=es&region=ES`;
+    s.async = true;
+    s.onload = () => resolve((window as any).google);
+    s.onerror = () => reject(new Error("No se pudo cargar Google Maps"));
+    document.head.appendChild(s);
+  });
+  return loaderPromise;
 }
 
-const useStyles = makeStyles((c) => ({
-  root: { flex: 1, backgroundColor: c.mapTint, overflow: "hidden" },
-  loading: { position: "absolute", left: 0, right: 0, top: "48%", alignItems: "center" },
-  notice: { position: "absolute", bottom: 8, left: spacing.md, flexDirection: "row", gap: 6, alignItems: "center", backgroundColor: c.glass, paddingHorizontal: 8, paddingVertical: 4, borderRadius: radius.pill, borderWidth: 1, borderColor: c.border },
-  noticeTxt: { fontFamily: fonts.medium, fontSize: 11, color: c.muted },
-  abs: { position: "absolute", alignItems: "center" },
-  inc: { width: 26, height: 26, borderRadius: 13, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: c.glassStrong },
-  pinTxt: { fontFamily: fonts.semibold, fontSize: 11, color: c.onSurface, marginTop: -2, backgroundColor: c.glassStrong, paddingHorizontal: 4, borderRadius: 4 },
-  zoom: { position: "absolute", left: spacing.md, top: "50%", gap: 6 },
-  zBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: c.glassStrong, borderWidth: 1, borderColor: c.border, alignItems: "center", justifyContent: "center" },
-}));
+function personIcon(p: MapPerson): string {
+  const initial = (p.name || "?").trim().charAt(0).toUpperCase();
+  const color = p.color || "#06AED5";
+  const size = p.is_me ? 52 : 44;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size + 8}" viewBox="0 0 ${size} ${size + 8}">
+    <circle cx="${size / 2}" cy="${size / 2}" r="${size / 2 - 2}" fill="${color}" stroke="white" stroke-width="3"/>
+    <text x="50%" y="${size / 2}" dy="6" text-anchor="middle" font-family="Arial, sans-serif" font-weight="bold" font-size="${size / 2.4}" fill="white">${initial}</text>
+    <polygon points="${size / 2 - 6},${size - 2} ${size / 2 + 6},${size - 2} ${size / 2},${size + 6}" fill="${color}"/>
+  </svg>`;
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+}
+
+export function MapCanvas({ people, pins = [], polyline, onPersonPress, center, zoomDelta = 0.01, onMapPress, onMapLongPress, selected, incidents = [], onIncidentPress }: MapCanvasProps) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const mapRef = useRef<any>(null);
+  const markersRef = useRef<any[]>([]);
+  const pinMarkersRef = useRef<any[]>([]);
+  const selMarkerRef = useRef<any>(null);
+  const lineRef = useRef<any>(null);
+  const incMarkersRef = useRef<any[]>([]);
+  const readyRef = useRef(false);
+  const [, force] = React.useReducer((x) => x + 1, 0);
+
+  // init once
+  useEffect(() => {
+    let cancelled = false;
+    loadGoogle().then((google) => {
+      if (cancelled || !ref.current) return;
+      const located = people.filter((p) => p.state === "shared" && p.lat != null);
+      const start = center ?? (located[0] ? { lat: located[0].lat!, lng: located[0].lng! } : { lat: 40.4168, lng: -3.7038 });
+      const map = new google.maps.Map(ref.current, {
+        center: { lat: start.lat, lng: start.lng },
+        zoom: center ? 15 : 12,
+        disableDefaultUI: true,
+        zoomControl: true,
+        gestureHandling: "greedy",
+        clickableIcons: false,
+        styles: [
+          { featureType: "poi.business", stylers: [{ visibility: "off" }] },
+          { featureType: "transit", stylers: [{ visibility: "simplified" }] },
+        ],
+      });
+      map.addListener("click", (e: any) => onMapPress?.({ lat: e.latLng.lat(), lng: e.latLng.lng() }));
+      map.addListener("rightclick", (e: any) => onMapLongPress?.({ lat: e.latLng.lat(), lng: e.latLng.lng() }));
+      mapRef.current = map;
+      readyRef.current = true;
+      force();
+    }).catch(() => null);
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // camera follow
+  useEffect(() => {
+    if (!readyRef.current || !mapRef.current || !center) return;
+    mapRef.current.panTo({ lat: center.lat, lng: center.lng });
+    if (zoomDelta) {
+      const z = zoomDelta <= 0.005 ? 16 : zoomDelta <= 0.02 ? 15 : 13;
+      mapRef.current.setZoom(z);
+    }
+  }, [center?.lat, center?.lng, (center as any)?.key]);
+
+  // people markers
+  useEffect(() => {
+    if (!readyRef.current || !mapRef.current) return;
+    const google = (window as any).google;
+    markersRef.current.forEach((m) => m.setMap(null));
+    markersRef.current = [];
+    people.filter((p) => p.state === "shared" && p.lat != null).forEach((p) => {
+      const m = new google.maps.Marker({
+        position: { lat: p.lat!, lng: p.lng! },
+        map: mapRef.current,
+        title: p.name,
+        icon: { url: personIcon(p), scaledSize: new google.maps.Size(p.is_me ? 52 : 44, p.is_me ? 60 : 52), anchor: new google.maps.Point(p.is_me ? 26 : 22, p.is_me ? 58 : 50) },
+        zIndex: p.is_me ? 10 : 5,
+      });
+      m.addListener("click", () => onPersonPress?.(p));
+      markersRef.current.push(m);
+    });
+  }, [JSON.stringify(people.map((p) => [p.member_id, p.lat, p.lng, p.name, p.color, p.is_me]))]);
+
+  // pins + selected
+  useEffect(() => {
+    if (!readyRef.current || !mapRef.current) return;
+    const google = (window as any).google;
+    pinMarkersRef.current.forEach((m) => m.setMap(null));
+    pinMarkersRef.current = pins.map((pin) => new google.maps.Marker({ position: { lat: pin.lat, lng: pin.lng }, map: mapRef.current, title: pin.title }));
+    if (selMarkerRef.current) selMarkerRef.current.setMap(null);
+    selMarkerRef.current = selected
+      ? new google.maps.Marker({ position: { lat: selected.lat, lng: selected.lng }, map: mapRef.current, icon: { path: google.maps.SymbolPath.CIRCLE, scale: 8, fillColor: "#06AED5", fillOpacity: 1, strokeColor: "white", strokeWeight: 2 } })
+      : null;
+  }, [JSON.stringify(pins), selected?.lat, selected?.lng]);
+
+  // polyline
+  useEffect(() => {
+    if (!readyRef.current || !mapRef.current) return;
+    const google = (window as any).google;
+    if (lineRef.current) lineRef.current.setMap(null);
+    lineRef.current = polyline && polyline.length > 1
+      ? new google.maps.Polyline({ path: polyline.map(([lat, lng]) => ({ lat, lng })), map: mapRef.current, strokeColor: "#06AED5", strokeWeight: 4, strokeOpacity: 0.85 })
+      : null;
+  }, [JSON.stringify(polyline)]);
+
+  // incidents
+  useEffect(() => {
+    if (!readyRef.current || !mapRef.current) return;
+    const google = (window as any).google;
+    incMarkersRef.current.forEach((m) => m.setMap(null));
+    incMarkersRef.current = incidents.map((i) => {
+      const m = new google.maps.Marker({
+        position: { lat: i.lat, lng: i.lng }, map: mapRef.current, title: i.title ?? i.type,
+        icon: { path: google.maps.SymbolPath.CIRCLE, scale: 10, fillColor: i.road_closed ? "#EF4444" : "#F59E0B", fillOpacity: 1, strokeColor: "white", strokeWeight: 2 },
+      });
+      m.addListener("click", () => onIncidentPress?.(i));
+      return m;
+    });
+  }, [JSON.stringify(incidents)]);
+
+  return <div ref={ref} style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }} data-testid="map-canvas" />;
+}

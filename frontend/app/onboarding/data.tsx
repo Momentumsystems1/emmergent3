@@ -12,8 +12,7 @@ export default function Data() {
   const router = useRouter();
   const c = ONBOARDING.data;
   return (
-    <OnboardingScreen step="data" testID="onboarding-data" title={c.title} body={c.body} primary={c.primary} secondary={c.secondary}
-      onSecondary={() => router.push("/legal/privacy")} showBack
+    <OnboardingScreen step="data" testID="onboarding-data" title={c.title} body={c.body} primary={c.primary} showBack
       onPrimary={async () => { await setLocalOnboarding({ step: "transparency" }); router.push("/onboarding/transparency"); }}>
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
         {ITEMS.map((i) => <Pill key={i} label={i} />)}

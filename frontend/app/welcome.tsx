@@ -17,7 +17,7 @@ export default function Welcome() {
           <View style={s.logoRing}>
             <Image source={require("../assets/images/logo.png")} style={s.logo} testID="welcome-logo" />
           </View>
-          <T weight="bold" style={s.title}>Sentinel Family</T>
+          <T weight="bold" style={s.title}>My Cluster</T>
           <T style={s.tagline}>Movilidad, coordinación y seguridad para los tuyos. Tu privacidad, siempre en tus manos.</T>
         </View>
         <View style={{ gap: spacing.md }}>

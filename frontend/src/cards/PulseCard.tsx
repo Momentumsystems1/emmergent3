@@ -1,5 +1,5 @@
 // ============================================================
-// CARDS — PULSE CARD (double-sided). Faithful structure of remix-pulse-engine-card with Sentinel content:
+// CARDS — PULSE CARD (double-sided). Faithful structure of remix-pulse-engine-card with My Cluster content:
 // header (brand · mono code) → visualizer strip → control row → divider → status label/text → footer (timer · signal · code)
 // Back: title/close, info rows, live stream list, footer status dot. Flip: rotateY 0→180 with backface hidden.
 // ============================================================

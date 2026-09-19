@@ -12,8 +12,7 @@ export default function Terms() {
   const { colors } = useTheme();
   const c = ONBOARDING.terms;
   return (
-    <OnboardingScreen step="terms" testID="onboarding-terms" title={c.title} body={c.body} primary={c.primary} secondary={c.secondary}
-      onSecondary={() => router.push("/legal/terms")}
+    <OnboardingScreen step="terms" testID="onboarding-terms" title={c.title} body={c.body} primary={c.primary}
       onPrimary={async () => { await setLocalOnboarding({ step: "data", terms_accepted_at: new Date().toISOString() }); router.push("/onboarding/data"); }}>
       <View style={{ gap: 6 }}>
         <T style={{ color: colors.muted, fontSize: 13 }}>Si no aceptas, puedes salir de la configuración. La aceptación es necesaria para operar el servicio.</T>

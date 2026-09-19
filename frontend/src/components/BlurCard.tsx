@@ -1,4 +1,4 @@
-// Design norm for Sentinel map overlays: translucent-black card with blur that never covers the whole map.
+// Design norm for My Cluster map overlays: translucent-black card with blur that never covers the whole map.
 // Always dark regardless of the app theme (glass over the map), so its text is white.
 import { BlurView } from "expo-blur";
 import React from "react";

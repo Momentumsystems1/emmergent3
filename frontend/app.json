@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "Sentinel Family",
-    "slug": "sentinel-family",
+    "name": "My Cluster",
+    "slug": "my-cluster",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "sentinel",
+    "scheme": "mycluster",
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,

@@ -1,190 +1,175 @@
-// Group context: members (orbital view), invitation states, events, meetings & convoys. Reuses the orbital field.
+// Group screen: members + P1 invitations. Creates a link `/?invite=<token>` (static-hosting safe) and shares it
+// via WhatsApp / system share / copy. Every status shown is the real invitations row state.
 import Ionicons from "@react-native-vector-icons/ionicons";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
-import { Alert, Platform, Pressable, ScrollView, TextInput, useWindowDimensions, View } from "react-native";
+import { Linking, Platform, Pressable, ScrollView, Share, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { api, unavailableOf } from "@/src/api";
 import { useAuth } from "@/src/auth";
-import { InviteOptions } from "@/src/components/InviteOptions";
-import { OrbitalField } from "@/src/components/OrbitalField";
-import { AddMemberSheet, MemberInfo, MemberSheet } from "@/src/components/sheets";
-import { Button, Pill, SectionLabel, showUnavailable, T, toast } from "@/src/components/ui";
-import { dispatchInvitation } from "@/src/invites";
+import { Button, Pill, SectionLabel, T, toast } from "@/src/components/ui";
+import { createInvitation, getGroupInvitations, getGroupMembers, getMyGroups, InvitationRow, markDispatched } from "@/src/sb";
 import { fonts, makeStyles, radius, spacing, useTheme } from "@/src/theme";
 
-const confirmDelete = (title: string, msg: string, onOk: () => void) => {
-  if (Platform.OS === "web") { if (window.confirm(`${title}\n${msg}`)) onOk(); return; }
-  Alert.alert(title, msg, [{ text: "Cancelar", style: "cancel" }, { text: "Borrar", style: "destructive", onPress: onOk }]);
+const DURATIONS = [
+  { key: "24h", label: "24 h", hours: 24 },
+  { key: "7d", label: "7 días", hours: 24 * 7 },
+  { key: "30d", label: "30 días", hours: 24 * 30 },
+];
+
+function inviteLink(token: string): string {
+  if (Platform.OS === "web" && typeof window !== "undefined") return `${window.location.origin}/?invite=${token}`;
+  return `mycluster://?invite=${token}`;
+}
+
+const STATUS: Record<string, { label: string; tone: "muted" | "cyan" | "green" | "amber" | "red" }> = {
+  prepared: { label: "Sin enviar", tone: "muted" },
+  dispatched: { label: "Enviada", tone: "amber" },
+  accepted: { label: "Aceptada", tone: "green" },
+  declined: { label: "Rechazada", tone: "red" },
+  expired: { label: "Expirada", tone: "red" },
 };
+const ROLE: Record<string, string> = { owner: "Propietario", admin: "Administrador", member: "Miembro" };
 
 export default function GroupDetail() {
-  const { id, tab } = useLocalSearchParams<{ id: string; tab?: string }>();
+  const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { user } = useAuth();
   const qc = useQueryClient();
   const s = useStyles();
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [adding, setAdding] = useState(false);
-  const [renaming, setRenaming] = useState(false);
-  const [nameDraft, setNameDraft] = useState("");
-  const [view, setView] = useState<"members" | "events">(tab === "events" ? "events" : "members");
 
-  const g = useQuery({ queryKey: ["group", id], queryFn: () => api<any>(`/groups/${id}`), refetchInterval: 12000 });
-  const events = useQuery({ queryKey: ["events", id], queryFn: () => api<any[]>(`/groups/${id}/events`), enabled: view === "events" });
-  const meetings = useQuery({ queryKey: ["meetings", id], queryFn: () => api<any[]>(`/groups/${id}/meetings`) });
-  const convoys = useQuery({ queryKey: ["convoys", id], queryFn: () => api<any[]>(`/groups/${id}/convoys`) });
-  const refresh = () => { qc.invalidateQueries({ queryKey: ["group", id] }); qc.invalidateQueries({ queryKey: ["groups"] }); };
-  const canManage = g.data?.my_role === "owner" || g.data?.my_role === "admin";
+  const [invName, setInvName] = useState("");
+  const [membership, setMembership] = useState<"fixed" | "temporary">("fixed");
+  const [duration, setDuration] = useState(DURATIONS[1]);
+  const [busy, setBusy] = useState(false);
+  const [fresh, setFresh] = useState<InvitationRow | null>(null);
 
-  const invite = useMutation({
-    mutationFn: (v: any) => api<any>(`/groups/${id}/invitations`, { method: "POST", json: v }),
-    onSuccess: async (r) => {
-      setAdding(false); refresh();
-      const res = await dispatchInvitation({ ...r.invitation });
-      toast(`${r.invitation.name}: ${res.label}`, res.ok ? "success" : "error"); refresh();
-    },
-    onError: (e) => { const u = unavailableOf(e); if (u) { setAdding(false); showUnavailable(u); } else toast((e as any).message, "error"); },
-  });
-  const rename = useMutation({
-    mutationFn: (name: string) => api(`/groups/${id}`, { method: "PATCH", json: { name } }),
-    onSuccess: () => { setRenaming(false); refresh(); }, onError: (e: any) => toast(e.message, "error"),
-  });
-  const removeGroup = useMutation({
-    mutationFn: () => api(`/groups/${id}`, { method: "DELETE" }),
-    onSuccess: () => { toast("Grupo borrado", "success"); qc.invalidateQueries({ queryKey: ["groups"] }); router.replace("/map"); },
-    onError: (e: any) => toast(e.message, "error"),
-  });
-  const act = useMutation({
-    mutationFn: ({ path, method = "POST" }: { path: string; method?: string }) => api(path, { method }),
-    onSuccess: () => { setSelectedId(null); refresh(); }, onError: (e: any) => toast(e.message, "error"),
-  });
-  const changeRole = useMutation({
-    mutationFn: ({ mid, role }: { mid: string; role: string }) => api(`/groups/${id}/members/${mid}/role`, { method: "PATCH", json: { role } }),
-    onSuccess: () => { toast("Permisos actualizados", "success"); refresh(); }, onError: (e: any) => toast(e.message, "error"),
-  });
-  const eventAction = useMutation({
-    mutationFn: ({ eid, action }: { eid: string; action: string }) => api(`/events/${eid}/action`, { method: "POST", json: { action } }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["events", id] }); refresh(); },
-  });
+  const groups = useQuery({ queryKey: ["groups"], queryFn: getMyGroups });
+  const group = (groups.data ?? []).find((g) => g.id === id);
+  const members = useQuery({ queryKey: ["members", id], enabled: !!id, queryFn: () => getGroupMembers(id!) });
+  const invitations = useQuery({ queryKey: ["invitations", id], enabled: !!id, queryFn: () => getGroupInvitations(id!) });
+  const canManage = group?.my_role === "owner" || group?.my_role === "admin";
 
-  const group = g.data;
-  const selected: MemberInfo | null = group?.members.find((m: any) => m.id === selectedId) ?? null;
-  const size = Math.min(width - spacing.xl * 2, 320);
-  const isOwner = group?.owner_id === user?.id;
+  const refresh = () => { qc.invalidateQueries({ queryKey: ["invitations", id] }); qc.invalidateQueries({ queryKey: ["members", id] }); };
+
+  const create = async () => {
+    if (!invName.trim()) return toast("Pon un nombre a la invitación (p. ej. Laura)", "error");
+    setBusy(true);
+    try {
+      const expiresAt = membership === "temporary" ? new Date(Date.now() + duration.hours * 3600_000).toISOString() : null;
+      const inv = await createInvitation(id!, { name: invName.trim(), membership, expiresAt });
+      setFresh(inv);
+      setInvName("");
+      refresh();
+    } catch (e: any) { toast(e?.message ?? "No se pudo crear la invitación", "error"); } finally { setBusy(false); }
+  };
+
+  const dispatch = async (inv: InvitationRow, via: "whatsapp" | "share" | "copy") => {
+    const link = inviteLink(inv.token);
+    const text = `${inv.invitee_name ? `${inv.invitee_name}, te` : "Te"} invito a mi grupo “${group?.name ?? "My Cluster"}” en My Cluster. Entra desde este enlace: ${link}`;
+    try {
+      if (via === "whatsapp") await Linking.openURL(`https://wa.me/?text=${encodeURIComponent(text)}`);
+      else if (via === "share") await Share.share({ message: text });
+      else if (Platform.OS === "web" && navigator.clipboard) { await navigator.clipboard.writeText(link); toast("Enlace copiado", "success"); }
+      else await Share.share({ message: text });
+      await markDispatched(inv.token);
+      setFresh(null);
+      refresh();
+    } catch { /* user cancelled the share sheet */ }
+  };
+
   return (
     <View style={s.root} testID="group-detail">
       <View style={[s.header, { paddingTop: insets.top + spacing.sm }]}>
         <Pressable testID="header-back-button" onPress={() => (router.canGoBack() ? router.back() : router.replace("/map"))} style={s.iconBtn}><Ionicons name="chevron-back" size={22} color={colors.onSurface} /></Pressable>
-        {renaming ? (
-          <TextInput testID="group-rename-input" style={s.renameInput} value={nameDraft} onChangeText={setNameDraft} autoFocus returnKeyType="done" onSubmitEditing={() => nameDraft.trim() && rename.mutate(nameDraft.trim())} />
-        ) : (
-          <T weight="bold" style={{ fontSize: 20, flex: 1 }} numberOfLines={1}>{group?.name ?? "Grupo"}</T>
-        )}
-        {renaming ? (
-          <>
-            <Pressable testID="group-rename-save" onPress={() => nameDraft.trim() && rename.mutate(nameDraft.trim())} style={s.iconBtn}><Ionicons name="checkmark" size={20} color={colors.success} /></Pressable>
-            <Pressable testID="group-rename-cancel" onPress={() => setRenaming(false)} style={s.iconBtn}><Ionicons name="close" size={20} color={colors.muted} /></Pressable>
-          </>
-        ) : canManage ? (
-          <>
-            <Pressable testID="group-rename-button" onPress={() => { setNameDraft(group?.name ?? ""); setRenaming(true); }} style={s.iconBtn} accessibilityLabel="Cambiar nombre del grupo"><Ionicons name="pencil" size={18} color={colors.onSurface} /></Pressable>
-            {isOwner ? <Pressable testID="group-delete-button" onPress={() => confirmDelete("Borrar grupo", `Se eliminará "${group?.name}" y sus invitaciones.`, () => removeGroup.mutate())} style={s.iconBtn} accessibilityLabel="Borrar grupo"><Ionicons name="trash" size={18} color={colors.error} /></Pressable> : null}
-            <Pressable testID="group-add-member" onPress={() => setAdding(true)} style={s.iconBtn}><Ionicons name="person-add" size={18} color={colors.onSurface} /></Pressable>
-          </>
-        ) : null}
+        <T weight="bold" style={{ fontSize: 20, flex: 1 }} numberOfLines={1}>{group?.name ?? "Grupo"}</T>
       </View>
-      <View style={s.tabsWrap}>
-        <View style={s.tabs}>
-          {(["members", "events"] as const).map((k) => (
-            <Pressable key={k} testID={`group-tab-${k}`} onPress={() => setView(k)} style={[s.tab, view === k && s.tabOn]}>
-              <T weight="semibold" style={{ fontSize: 13, color: view === k ? colors.onBrandSoft : colors.onSurfaceTertiary }}>{k === "members" ? "Miembros" : "Actividad"}</T>
-            </Pressable>
-          ))}
-        </View>
-      </View>
-      <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + spacing.xl }}>
-        {view === "members" && group ? (
-          <>
-            <View style={{ alignItems: "center", paddingVertical: spacing.lg }}>
-              <OrbitalField size={size} phase="editing" groupName={group.name}
-                members={group.members.map((m: any) => ({ id: m.id, name: m.display_name, color: m.color, isMe: m.user_id === user?.id, status: m.status === "active" ? "active" : m.status === "declined" ? "declined" : m.status === "expired" ? "expired" : "pending" }))}
-                onMemberPress={(m) => setSelectedId(m.id)} />
+
+      <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: insets.bottom + spacing.xl, gap: spacing.sm }}>
+        <SectionLabel style={{ marginBottom: spacing.xs }}>Miembros</SectionLabel>
+        {(members.data ?? []).map((m) => (
+          <View key={m.user_id} style={s.row} testID={`member-row-${m.user_id}`}>
+            <View style={[s.dot, { backgroundColor: m.status === "active" ? m.color : colors.pending }]} />
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <T weight="semibold" numberOfLines={1}>{m.name}{m.user_id === user?.id ? " (tú)" : ""}</T>
+              <T style={{ fontSize: 12, color: colors.muted }} numberOfLines={1}>{ROLE[m.role] ?? m.role} · {m.membership === "temporary" ? "temporal" : "fijo"}{m.expires_at ? ` · hasta ${new Date(m.expires_at).toLocaleDateString("es-ES")}` : ""}</T>
             </View>
-            <View style={{ paddingHorizontal: spacing.lg, gap: spacing.sm }}>
-              {group.members.map((m: any) => (
-                <Pressable key={m.id} testID={`member-row-${m.id}`} onPress={() => setSelectedId(m.id)} style={s.row}>
-                  <View style={s.rowMain}>
-                    <View style={[s.dot, { backgroundColor: m.status === "active" ? m.color : colors.pending }]} />
-                    <View style={{ flex: 1, minWidth: 0 }}>
-                      <T weight="semibold" numberOfLines={1}>{m.display_name}{m.user_id === user?.id ? " (tú)" : ""}</T>
-                      <T style={{ fontSize: 12, color: colors.muted }} numberOfLines={1}>{ROLE[m.role] ?? m.role} · {m.membership === "temporary" ? "temporal" : "fijo"}{m.expires_at ? ` · expira ${new Date(m.expires_at).toLocaleDateString("es-ES")}` : ""}</T>
-                    </View>
-                  </View>
-                  <View style={s.rowPills}>
-                    <Pill label={STATUS[m.status] ?? m.status} tone={m.status === "active" ? "cyan" : m.status === "pending" ? "muted" : "red"} />
-                    {m.status === "active" && LOC[m.location_state] ? <Pill label={LOC[m.location_state]} tone={m.location_state === "shared" ? "green" : "muted"} /> : null}
-                  </View>
-                </Pressable>
-              ))}
-              {canManage ? (<><SectionLabel style={{ marginTop: spacing.xl, marginBottom: spacing.xs }}>Invitar</SectionLabel><InviteOptions groupId={id!} groupName={group.name} onChanged={() => qc.invalidateQueries({ queryKey: ["group", id] })} /></>) : null}
-              <SectionLabel style={{ marginTop: spacing.xl, marginBottom: spacing.xs }}>Coordinación</SectionLabel>
-              <View style={{ flexDirection: "row", gap: spacing.sm }}>
-                <Button small testID="group-new-meeting" title="Quedar" icon="calendar" variant="secondary" onPress={() => router.push({ pathname: "/meeting/new", params: { group: id } })} />
-                <Button small testID="group-new-convoy" title="Convoy" icon="car-sport" variant="secondary" onPress={() => router.push({ pathname: "/convoy/new", params: { group: id } })} />
-              </View>
-              {(meetings.data ?? []).map((m) => <Pressable key={m.id} testID={`meeting-row-${m.id}`} onPress={() => router.push(`/meeting/${m.id}`)} style={s.row}><Ionicons name="calendar" size={18} color={colors.success} /><T weight="semibold" style={{ flex: 1 }}>{m.name}</T><Pill label={m.status === "active" ? "Activa" : "Cerrada"} tone={m.status === "active" ? "green" : "muted"} /></Pressable>)}
-              {(convoys.data ?? []).map((c) => <Pressable key={c.id} testID={`convoy-row-${c.id}`} onPress={() => router.push(`/convoy/${c.id}`)} style={s.row}><Ionicons name="car-sport" size={18} color={colors.brandSecondary} /><T weight="semibold" style={{ flex: 1 }}>{c.name}</T><Pill label={c.status === "active" ? "En curso" : "Finalizado"} tone={c.status === "active" ? "blue" : "muted"} /></Pressable>)}
-            </View>
-          </>
-        ) : null}
-        {view === "events" ? (
-          <View style={{ padding: spacing.lg, gap: spacing.sm }}>
-            {(events.data ?? []).length === 0 ? <T style={{ color: colors.muted }}>Sin actividad todavía. Las preguntas “¿Todo bien?”, incidencias y emergencias aparecerán aquí con su trazabilidad.</T> : null}
-            {(events.data ?? []).map((e) => (
-              <View key={e.id} style={s.row} testID={`event-row-${e.id}`}>
-                <Ionicons name={e.kind === "emergency" ? "alert-circle" : e.kind === "incident" ? "warning" : "help-circle"} size={20} color={e.severity === "critical" ? colors.error : e.severity === "warning" ? colors.orangeRisk : colors.brandPrimary} />
-                <View style={{ flex: 1 }}>
-                  <T weight="semibold">{e.message ?? e.kind}</T>
-                  <T style={{ fontSize: 12, color: colors.muted }}>{new Date(e.created_at).toLocaleString("es-ES")} · escalado: {e.escalation} · {e.recipients?.length ?? 0} destinatarios</T>
-                </View>
-                <Pill label={e.state} tone={e.state === "resolved" ? "green" : e.state === "escalated" ? "red" : "amber"} />
-                {e.state === "open" ? <Pressable testID={`event-ok-${e.id}`} onPress={() => eventAction.mutate({ eid: e.id, action: "respond_ok" })} style={s.iconBtn}><Ionicons name="checkmark" size={18} color={colors.success} /></Pressable> : null}
-              </View>
-            ))}
+            <Pill label={m.status === "active" ? "Activo" : m.status} tone={m.status === "active" ? "cyan" : "muted"} />
           </View>
+        ))}
+        {members.isSuccess && (members.data ?? []).length === 0 ? <T style={{ color: colors.muted }}>Aún no hay miembros.</T> : null}
+
+        {canManage ? (
+          <>
+            <SectionLabel style={{ marginTop: spacing.xl, marginBottom: spacing.xs }}>Invitar</SectionLabel>
+            <View style={s.card}>
+              <T weight="semibold">Nueva invitación</T>
+              <TextInput testID="invite-name" style={s.input} placeholder="Nombre de la persona (p. ej. Laura)" placeholderTextColor={colors.muted} value={invName} onChangeText={setInvName} />
+              <View style={{ flexDirection: "row", gap: spacing.sm }}>
+                {(["fixed", "temporary"] as const).map((k) => (
+                  <Pressable key={k} testID={`invite-membership-${k}`} onPress={() => setMembership(k)} style={[s.chip, membership === k && s.chipOn]}>
+                    <T weight="semibold" style={{ fontSize: 13, color: membership === k ? colors.onBrandSoft : colors.onSurfaceTertiary }}>{k === "fixed" ? "Miembro fijo" : "Temporal"}</T>
+                  </Pressable>
+                ))}
+              </View>
+              {membership === "temporary" ? (
+                <View style={{ flexDirection: "row", gap: spacing.sm }}>
+                  {DURATIONS.map((d) => (
+                    <Pressable key={d.key} testID={`invite-duration-${d.key}`} onPress={() => setDuration(d)} style={[s.chip, duration.key === d.key && s.chipOn]}>
+                      <T weight="semibold" style={{ fontSize: 13, color: duration.key === d.key ? colors.onBrandSoft : colors.onSurfaceTertiary }}>{d.label}</T>
+                    </Pressable>
+                  ))}
+                </View>
+              ) : null}
+              <Button testID="invite-create" title="Crear enlace de invitación" icon="link" onPress={create} loading={busy} />
+              {fresh ? (
+                <View style={s.linkBox} testID="invite-fresh">
+                  <T style={{ fontSize: 12, color: colors.muted }} numberOfLines={2}>{inviteLink(fresh.token)}</T>
+                  <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: spacing.sm }}>
+                    <Button small testID="invite-whatsapp" title="WhatsApp" icon="logo-whatsapp" onPress={() => dispatch(fresh, "whatsapp")} />
+                    <Button small testID="invite-share" title="Compartir" icon="share-social" variant="secondary" onPress={() => dispatch(fresh, "share")} />
+                    <Button small testID="invite-copy" title="Copiar" icon="copy" variant="secondary" onPress={() => dispatch(fresh, "copy")} />
+                  </View>
+                </View>
+              ) : null}
+            </View>
+
+            <SectionLabel style={{ marginTop: spacing.lg, marginBottom: spacing.xs }}>Invitaciones</SectionLabel>
+            {(invitations.data ?? []).map((inv) => {
+              const st = STATUS[inv.status] ?? { label: inv.status, tone: "muted" as const };
+              const open = inv.status === "prepared" || inv.status === "dispatched";
+              return (
+                <View key={inv.token} style={s.row} testID={`invitation-row-${inv.token}`}>
+                  <Ionicons name={inv.status === "accepted" ? "checkmark-circle" : "link"} size={18} color={inv.status === "accepted" ? colors.success : colors.brandPrimary} />
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <T weight="semibold" numberOfLines={1}>{inv.invitee_name ?? "Sin nombre"}</T>
+                    <T style={{ fontSize: 12, color: colors.muted }} numberOfLines={1}>{inv.membership === "temporary" ? "Temporal" : "Fijo"}{inv.expires_at ? ` · hasta ${new Date(inv.expires_at).toLocaleDateString("es-ES")}` : ""}</T>
+                  </View>
+                  <Pill label={st.label} tone={st.tone} />
+                  {open ? <Pressable testID={`invitation-share-${inv.token}`} onPress={() => dispatch(inv, "share")} style={s.iconBtn} accessibilityLabel="Compartir enlace"><Ionicons name="share-social" size={16} color={colors.onSurface} /></Pressable> : null}
+                </View>
+              );
+            })}
+            {invitations.isSuccess && (invitations.data ?? []).length === 0 ? <T style={{ color: colors.muted }}>Todavía no has invitado a nadie.</T> : null}
+          </>
         ) : null}
       </ScrollView>
-      <AddMemberSheet visible={adding} onClose={() => setAdding(false)} loading={invite.isPending} onSubmit={(v) => invite.mutate(v)} />
-      <MemberSheet member={selected} onClose={() => setSelectedId(null)} canManage={!!canManage} changingRole={changeRole.isPending}
-        onResend={() => selected?.invitation && act.mutate({ path: `/invitations/${selected.invitation.id}/resend` })}
-        onCancel={() => selected?.invitation && act.mutate({ path: `/invitations/${selected.invitation.id}/cancel` })}
-        onRemove={() => selected && act.mutate({ path: `/groups/${id}/members/${selected.id}`, method: "DELETE" })}
-        onChangeRole={(role) => selected && changeRole.mutate({ mid: selected.id, role })} />
     </View>
   );
 }
 
-const ROLE: Record<string, string> = { owner: "Propietario", admin: "Administrador", member: "Miembro", adult_responsible: "Adulto responsable", adult_member: "Miembro adulto", protected_minor: "Menor protegido", temporary_guest: "Invitado temporal" };
-const STATUS: Record<string, string> = { active: "Activo", pending: "Pendiente", declined: "Rechazada", expired: "Expirada", removed: "Eliminado" };
-const LOC: Record<string, string> = { shared: "Ubicación", not_shared: "Sin ubicación", permission_pending: "Ubicación: permiso pendiente" };
-
 const useStyles = makeStyles((c) => ({
   root: { flex: 1, backgroundColor: c.surface },
   header: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingHorizontal: spacing.lg, paddingBottom: spacing.md },
-  renameInput: { flex: 1, fontFamily: fonts.bold, fontSize: 18, color: c.onSurface, borderBottomWidth: 1, borderColor: c.brandPrimary, paddingVertical: 4 },
   iconBtn: { width: 42, height: 42, borderRadius: 21, backgroundColor: c.surfaceSecondary, borderWidth: 1, borderColor: c.hairline, alignItems: "center", justifyContent: "center" },
-  tabsWrap: { paddingHorizontal: spacing.lg },
-  tabs: { flexDirection: "row", gap: 4, backgroundColor: c.surfaceTertiary, borderRadius: radius.pill, padding: 4, alignSelf: "flex-start" },
-  tab: { height: 34, paddingHorizontal: 16, borderRadius: radius.pill, alignItems: "center", justifyContent: "center" },
-  tabOn: { backgroundColor: c.surfaceSecondary, borderWidth: 1, borderColor: c.hairline },
-  row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.sm, backgroundColor: c.card, borderRadius: radius.md + 2, padding: spacing.md, borderWidth: 1, borderColor: c.hairline },
-  rowMain: { flexDirection: "row", alignItems: "center", gap: spacing.sm, flex: 1, minWidth: 0 },
-  rowPills: { flexDirection: "row", flexWrap: "wrap", gap: 6, justifyContent: "flex-end", maxWidth: 168 },
+  row: { flexDirection: "row", alignItems: "center", gap: spacing.sm, backgroundColor: c.card, borderRadius: radius.md + 2, padding: spacing.md, borderWidth: 1, borderColor: c.hairline },
   dot: { width: 12, height: 12, borderRadius: 6 },
+  card: { backgroundColor: c.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: c.border, padding: spacing.md, gap: spacing.sm },
+  input: { height: 48, borderRadius: radius.md, backgroundColor: c.surface, borderWidth: 1, borderColor: c.border, paddingHorizontal: spacing.md, fontFamily: fonts.regular, fontSize: 15, color: c.onSurface },
+  chip: { height: 36, paddingHorizontal: 14, borderRadius: radius.pill, backgroundColor: c.surfaceTertiary, borderWidth: 1, borderColor: c.border, alignItems: "center", justifyContent: "center" },
+  chipOn: { backgroundColor: c.brandSoft, borderColor: c.brandPrimary },
+  linkBox: { backgroundColor: c.surface, borderRadius: radius.md, borderWidth: 1, borderColor: c.borderStrong, padding: spacing.md },
 }));

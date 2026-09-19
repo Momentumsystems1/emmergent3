@@ -1,4 +1,4 @@
-// Design tokens for Sentinel Family — "Sentinel Pro" system v2.
+// Design tokens for My Cluster — "My Cluster Pro" system v2.
 // Light ("Día") and dark ("Noche") themes. All components must consume tokens, never hardcode colors.
 // Keys are backward-compatible with v1; v2 adds tonal ("Soft") surfaces, hairline, card and a type scale.
 import { useMemo } from "react";
@@ -41,7 +41,7 @@ const light = {
   border: "#DCE4EE",
   borderStrong: "#B9C6D6",
   divider: "#E6ECF4",
-  // Sentinel extras
+  // My Cluster extras
   glass: "rgba(255,255,255,0.78)",
   glassStrong: "rgba(255,255,255,0.94)",
   pending: "#B4C0CF",

@@ -16,18 +16,18 @@ export const PERSON_ACTIONS = [
 
 export const ONBOARDING = {
   terms: {
-    title: "Antes de empezar, ¿aceptas las condiciones de uso de Sentinel?",
-    body: "Sentinel es una aplicación de movilidad y seguridad cuyas funciones dependen de los permisos que tú concedes de forma explícita.",
+    title: "Antes de empezar, ¿aceptas las condiciones de uso de My Cluster?",
+    body: "My Cluster es una aplicación de movilidad y seguridad cuyas funciones dependen de los permisos que tú concedes de forma explícita.",
     primary: "Aceptar y continuar", secondary: "Leer condiciones completas",
   },
   data: {
-    title: "¿Quieres saber cómo utiliza Sentinel tus datos?",
+    title: "¿Quieres saber cómo utiliza My Cluster tus datos?",
     body: "Según los permisos que actives, distintas funciones pueden tratar tu ubicación actual o aproximada, rutas, ETA, estado de movimiento, modo de movilidad, eventos de seguridad, cámara, micrófono, información del dispositivo, eventos V16 y métricas de movilidad. El acceso depende siempre de permisos explícitos y de la compartición que configures.",
     primary: "Entendido", secondary: "Revisar información completa",
   },
   transparency: {
-    title: "Sentinel no utiliza funciones ocultas",
-    body: "Siempre podrás saber qué está accediendo Sentinel, qué comparte, con quién, por qué, desde cuándo y hasta cuándo.",
+    title: "My Cluster no utiliza funciones ocultas",
+    body: "Siempre podrás saber qué está accediendo My Cluster, qué comparte, con quién, por qué, desde cuándo y hasta cuándo.",
     bullets: ["Sin seguimiento oculto", "Sin activación oculta de la cámara", "Sin activación oculta del micrófono",
       "Sin acceso remoto invisible a cámaras", "Sin permisos temporales permanentes"],
     primary: "Entendido",

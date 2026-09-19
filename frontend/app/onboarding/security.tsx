@@ -16,8 +16,7 @@ export default function Security() {
   const { colors } = useTheme();
   const c = ONBOARDING.security;
   return (
-    <OnboardingScreen step="security" testID="onboarding-security" title={c.title} body={c.body} primary={c.primary} secondary={c.secondary} showBack
-      onSecondary={() => router.push("/legal/security")}
+    <OnboardingScreen step="security" testID="onboarding-security" title={c.title} body={c.body} primary={c.primary} showBack
       onPrimary={async () => { await setLocalOnboarding({ step: "account" }); router.push("/onboarding/account"); }}>
       <View style={{ gap: 12 }}>
         {ITEMS.map(([i, t]) => (

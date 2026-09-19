@@ -6,7 +6,7 @@ import { ActivityIndicator, Modal, Pressable, Text, TextProps, View, ViewProps }
 import Animated, { FadeInDown, FadeOutDown } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import type { UnavailableDetail } from "@/src/api";
+export type UnavailableDetail = { code: "PLAN_UNAVAILABLE" | "SERVICE_NOT_CONFIGURED"; title: string; reason: string; capability?: string };
 import { fonts, makeStyles, radius, shadow, spacing, useTheme } from "@/src/theme";
 
 // ---------------- tiny global emitters ----------------
@@ -110,7 +110,6 @@ const useToastStyles = makeStyles((c) => ({
 // ---------------- unavailable host (plan vs service) ----------------
 export function UnavailableHost() {
   const [d, setD] = useState<UnavailableDetail | null>(null);
-  const router = useRouter();
   const s = useUnStyles();
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
@@ -127,8 +126,6 @@ export function UnavailableHost() {
         <Text style={s.title} testID="unavailable-title">{d?.title}</Text>
         {d?.reason ? <Text style={s.reason} testID="unavailable-reason">{d.reason}</Text> : null}
         <View style={{ gap: spacing.sm, marginTop: spacing.lg }}>
-          {isPlan ? <Button testID="unavailable-upgrade-button" title="Ver planes y mejorar" icon="arrow-up-circle"
-            onPress={() => { setD(null); router.push("/plans"); }} /> : null}
           <Button testID="unavailable-ok-button" title="Entendido" variant="secondary" onPress={() => setD(null)} />
         </View>
       </View>

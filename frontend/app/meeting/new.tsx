@@ -46,7 +46,7 @@ export default function NewMeeting() {
     <View style={s.root} testID="meeting-new">
       <Header title={mode === "navigate" ? "Navegar" : "Quedar"} />
       <KeyboardAwareScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: insets.bottom + spacing.xl, gap: spacing.md }} bottomOffset={24}>
-        <T style={{ color: colors.muted, fontSize: 13 }}>Acción natural de Sentinel</T>
+        <T style={{ color: colors.muted, fontSize: 13 }}>Acción natural de MY CLUSTER</T>
         <TextInput testID="meeting-command-input" style={s.input} placeholder="Ej.: Envía una petición para quedar a cenar en El Rincón de Aragón a mi grupo Amigos" placeholderTextColor={colors.muted} value={command} onChangeText={setCommand} multiline onSubmitEditing={parseCommand} />
         <Button small testID="meeting-command-parse" title="Interpretar" variant="secondary" icon="sparkles" onPress={parseCommand} />
         <T weight="semibold" style={{ marginTop: spacing.sm }}>Nombre</T>

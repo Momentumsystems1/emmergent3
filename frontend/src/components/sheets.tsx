@@ -56,7 +56,7 @@ export function AddMemberSheet({ visible, onClose, onSubmit, loading }: { visibl
         <Option testID="channel-whatsapp" active={channel === "whatsapp"} onPress={() => setChannel("whatsapp")} title="WhatsApp" sub="Se abre WhatsApp con el enlace" icon="logo-whatsapp" />
         <Option testID="channel-sms" active={channel === "sms"} onPress={() => setChannel("sms")} title="SMS" sub="Se abre Mensajes" icon="chatbox" />
       </View>
-      <T style={{ color: colors.muted, fontSize: 12, marginTop: spacing.md }}>Sentinel no puede confirmar la entrega del mensaje: mostrará “Invitación preparada” hasta que la persona acepte.</T>
+      <T style={{ color: colors.muted, fontSize: 12, marginTop: spacing.md }}>MY CLUSTER no puede confirmar la entrega del mensaje: mostrará “Invitación preparada” hasta que la persona acepte.</T>
       <View style={{ marginTop: spacing.lg }}>
         <Button testID="add-member-submit" title="Crear invitación" loading={loading} disabled={name.trim().length < 1}
           onPress={() => { onSubmit({ name: name.trim(), membership, channel, duration_hours: membership === "temporary" ? hours : undefined }); reset(); }} />

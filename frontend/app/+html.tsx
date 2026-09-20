@@ -14,11 +14,11 @@ export default function Root({ children }: PropsWithChildren) {
           name="viewport"
           content="width=device-width, initial-scale=1, shrink-to-fit=no, viewport-fit=cover"
         />
-        <title>Sentinel Family</title>
-        <meta name="description" content="Sentinel Family — movilidad, coordinación y seguridad para los tuyos. Tu privacidad, siempre en tus manos." />
-        <meta name="theme-color" content="#060B16" />
+        <title>MY CLUSTER</title>
+        <meta name="description" content="MY CLUSTER — tu gente localizada y protegida en tiempo real. Ubicación en vivo, alertas y rutas compartidas. Privado y sin anuncios." />
+        <meta name="theme-color" content="#D93025" />
         <meta name="color-scheme" content="light dark" />
-        <meta property="og:title" content="Sentinel Family" />
+        <meta property="og:title" content="MY CLUSTER" />
         <meta property="og:description" content="Movilidad, coordinación y seguridad para los tuyos." />
         <meta property="og:type" content="website" />
         {/*
@@ -32,7 +32,7 @@ export default function Root({ children }: PropsWithChildren) {
             __html: `
               html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; text-rendering: optimizeLegibility; }
               body {
-                background-color: #04070F;
+                background-color: #EDEFF2;
                 background-image:
                   radial-gradient(60vw 60vh at 12% -10%, rgba(31,200,236,0.10), transparent 60%),
                   radial-gradient(50vw 50vh at 95% 110%, rgba(167,139,250,0.08), transparent 60%);

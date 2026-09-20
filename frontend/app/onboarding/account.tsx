@@ -59,7 +59,7 @@ export default function Account() {
 
   return (
     <KeyboardAvoidingView behavior="padding" keyboardVerticalOffset={16} style={{ flex: 1 }}>
-      <OnboardingScreen step="account" testID="onboarding-account" title={mode === "register" ? "Crea tu cuenta Sentinel" : "Inicia sesión en Sentinel"}
+      <OnboardingScreen step="account" testID="onboarding-account" title={mode === "register" ? "Crea tu cuenta MY CLUSTER" : "Inicia sesión en MY CLUSTER"}
         body="Tu cuenta identifica tus consentimientos, tus grupos y tus permisos. Solo pedimos lo imprescindible."
         primary={mode === "register" ? "Crear cuenta" : "Entrar"} onPrimary={submit} loading={loading} primaryDisabled={!email.includes("@") || password.length < 8}
         secondary={mode === "register" ? "Ya tengo cuenta" : "Crear una cuenta nueva"} onSecondary={() => setMode(mode === "register" ? "login" : "register")} showBack>

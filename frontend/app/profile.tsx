@@ -94,7 +94,7 @@ export default function ProfileScreen() {
         </View>
         <View style={s.card}>
           <T weight="bold">Accesibilidad</T>
-          <T style={{ fontSize: 12, color: colors.muted, marginTop: 4 }}>Sentinel respeta “Reducir movimiento” del sistema, usa color + icono + texto en todos los estados y objetivos táctiles de al menos 44 pt. El tema Día/Noche sigue la configuración del dispositivo.</T>
+          <T style={{ fontSize: 12, color: colors.muted, marginTop: 4 }}>MY CLUSTER respeta “Reducir movimiento” del sistema, usa color + icono + texto en todos los estados y objetivos táctiles de al menos 44 pt. El tema Día/Noche sigue la configuración del dispositivo.</T>
         </View>
         <Button testID="profile-signout" title="Cerrar sesión" variant="ghost" onPress={async () => { await signOut(); router.replace("/onboarding/account"); }} />
       </KeyboardAwareScrollView>

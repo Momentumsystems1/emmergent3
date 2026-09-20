@@ -29,9 +29,9 @@ export default function Index() {
 
   if (target) return <Redirect href={target as any} />;
   return (
-    <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#060B16", gap: 18 }} testID="bootstrap-screen">
-      <Image source={require("../assets/images/logo.png")} style={{ width: 76, height: 76 }} />
-      <T weight="bold" style={{ color: "#F0F5FC", fontSize: 17, letterSpacing: -0.3 }}>Sentinel Family</T>
+    <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.surface, gap: 18 }} testID="bootstrap-screen">
+      <Image source={require("../assets/images/helmet-dark.png")} style={{ width: 72, height: 64 }} />
+      <T weight="bold" style={{ color: colors.onSurface, fontSize: 16, letterSpacing: 3 }}>MY CLUSTER</T>
       <ActivityIndicator color={colors.brandPrimary} />
     </View>
   );

@@ -56,7 +56,7 @@ export default function Invite() {
               {open && !loading && user ? <Button testID="invite-accept" title="Aceptar y unirme" onPress={() => respond.mutate(true)} loading={respond.isPending} /> : null}
               {open && !loading && user ? <Button testID="invite-decline" title="No puedo unirme" variant="ghost" onPress={() => respond.mutate(false)} /> : null}
               {open && !loading && !user ? <Button testID="invite-create-account" title="Crear cuenta para aceptar" onPress={goAuth} /> : null}
-              {!open ? <Button testID="invite-home" title="Ir a Sentinel" variant="secondary" onPress={() => router.replace("/")} /> : null}
+              {!open ? <Button testID="invite-home" title="Ir a MY CLUSTER" variant="secondary" onPress={() => router.replace("/")} /> : null}
             </View>
           </>
         ) : null}

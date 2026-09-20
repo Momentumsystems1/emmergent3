@@ -158,7 +158,7 @@ export default function Drive() {
         {perm !== "granted" && perm !== "unknown" || (perm === "unknown" && !pos) ? (
           <Animated.View entering={FadeInDown} exiting={FadeOut} style={[s.card, { marginTop: spacing.sm }]} testID="drive-permission">
             <T weight="bold" style={{ fontSize: 13 }}>Ubicación para guiarte</T>
-            <T style={{ fontSize: 12, color: colors.muted, marginTop: 2 }}>Sentinel necesita tu posición en el dispositivo para seguir la ruta. Solo se comparte con tu grupo si tú lo has activado.</T>
+            <T style={{ fontSize: 12, color: colors.muted, marginTop: 2 }}>MY CLUSTER necesita tu posición en el dispositivo para seguir la ruta. Solo se comparte con tu grupo si tú lo has activado.</T>
             <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: spacing.sm }}>
               {perm === "blocked" ? <Button small testID="drive-open-settings" title="Abrir ajustes" onPress={() => Linking.openSettings().catch(() => null)} /> : <Button small testID="drive-permit" title="Permitir" onPress={requestPerm} />}
             </View>

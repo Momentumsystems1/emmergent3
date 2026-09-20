@@ -14,8 +14,8 @@ h = h.replace('<html lang="en">', '<html lang="es">');
 h = h.replace(
   '<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />',
   '<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no, viewport-fit=cover" />\n' +
-    '    <meta name="description" content="Sentinel Family — movilidad, coordinación y seguridad para los tuyos. Tu privacidad, siempre en tus manos." />\n' +
-    '    <meta name="theme-color" content="#060B16" />\n' +
+    '    <meta name="description" content="MY CLUSTER — tu gente localizada y protegida en tiempo real. Ubicación en vivo, alertas y rutas compartidas. Privado y sin anuncios." />\n' +
+    '    <meta name="theme-color" content="#D93025" />\n' +
     '    <meta name="color-scheme" content="light dark" />'
 );
 
@@ -23,13 +23,13 @@ const shell = `
     <style id="sentinel-shell">
       html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; text-rendering: optimizeLegibility; }
       body {
-        background-color: #04070F;
+        background-color: #EDEFF2;
         background-image:
-          radial-gradient(60vw 60vh at 12% -10%, rgba(31,200,236,0.10), transparent 60%),
-          radial-gradient(50vw 50vh at 95% 110%, rgba(167,139,250,0.08), transparent 60%);
+          radial-gradient(60vw 60vh at 12% -10%, rgba(234,67,53,0.08), transparent 60%),
+          radial-gradient(50vw 50vh at 95% 110%, rgba(95,99,104,0.10), transparent 60%);
         background-attachment: fixed;
       }
-      ::selection { background: rgba(31,200,236,0.35); }
+      ::selection { background: rgba(234,67,53,0.28); }
       * { scrollbar-width: thin; scrollbar-color: rgba(136,150,174,0.4) transparent; }
       *::-webkit-scrollbar { width: 8px; height: 8px; }
       *::-webkit-scrollbar-thumb { background: rgba(136,150,174,0.35); border-radius: 4px; }

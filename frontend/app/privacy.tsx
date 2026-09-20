@@ -40,7 +40,7 @@ export default function Privacy() {
 
   const front = (
     <>
-      <CardHeader brand="Sentinel" code={`PRIV_CARD.01 · ${activeCount}/${cats.length || 14}`} />
+      <CardHeader brand="MY CLUSTER" code={`PRIV_CARD.01 · ${activeCount}/${cats.length || 14}`} />
       <CardBars values={cats.map((c) => (eff(c.key)?.effective ? 1 : 0.15))} tone={colors.brandPrimary} />
       <CardLabel>¿Qué estoy compartiendo?</CardLabel>
       <CardStatus>Compartes <Hi>{String(activeCount)}</Hi> de {cats.length} categorías con <Hi>{recipients}</Hi>. Cada permiso es independiente y revocable.</CardStatus>

@@ -23,7 +23,7 @@ export function InviteOptions({ groupId, groupName, onChanged }: { groupId: stri
 
   const link = async () => {
     const inv = await api<Invitation>(`/groups/${groupId}/invite-link`, { method: "POST" });
-    return `Únete a mi grupo "${groupName}" en Sentinel Family. Toca el enlace para entrar: ${inv.link}`;
+    return `Únete a mi grupo "${groupName}" en MY CLUSTER. Toca el enlace para entrar: ${inv.link}`;
   };
   const viaWhatsApp = async () => {
     setBusy("wa");
@@ -70,7 +70,7 @@ function ContactsPicker({ visible, onClose, groupId, groupName }: { visible: boo
   }, [perm, visible]);
   const request = async () => { const p = await Contacts.requestPermissionsAsync(); setPerm(p.granted ? "granted" : p.canAskAgain ? "denied" : "blocked"); };
 
-  // Sequential WhatsApp dispatch: open one chat, continue with the next when the user comes back to Sentinel.
+  // Sequential WhatsApp dispatch: open one chat, continue with the next when the user comes back to MY CLUSTER.
   const openFor = async (inv: Invitation & { phone: string }) => {
     lastOpen.current = Date.now();
     await Linking.openURL(`https://wa.me/${digits(inv.phone)}?text=${encodeURIComponent(inviteText(inv))}`);
@@ -113,7 +113,7 @@ function ContactsPicker({ visible, onClose, groupId, groupName }: { visible: boo
       {perm === "unsupported" ? <T style={{ color: colors.muted, marginTop: spacing.sm }}>La agenda del dispositivo solo está disponible en la app móvil.</T> : null}
       {perm === "unknown" || perm === "denied" ? (
         <View style={{ marginTop: spacing.sm, gap: spacing.sm }}>
-          <T style={{ color: colors.muted, fontSize: 13 }}>Sentinel leerá tu agenda solo para que elijas a quién invitar. No se sube ni se guarda ningún contacto.</T>
+          <T style={{ color: colors.muted, fontSize: 13 }}>MY CLUSTER leerá tu agenda solo para que elijas a quién invitar. No se sube ni se guarda ningún contacto.</T>
           <Button small testID="contacts-permission" title={perm === "denied" ? "Volver a intentar" : "Permitir acceso a contactos"} onPress={request} />
         </View>
       ) : null}
@@ -134,7 +134,7 @@ function ContactsPicker({ visible, onClose, groupId, groupName }: { visible: boo
       ) : null}
       {created.length ? (
         <View style={{ marginTop: spacing.sm, gap: spacing.sm }}>
-          <T style={{ color: colors.muted, fontSize: 13 }}>Invitaciones preparadas. Se abre WhatsApp con cada número; al volver a Sentinel continúa con el siguiente.</T>
+          <T style={{ color: colors.muted, fontSize: 13 }}>Invitaciones preparadas. Se abre WhatsApp con cada número; al volver a MY CLUSTER continúa con el siguiente.</T>
           {created.map((c) => (
             <Pressable key={c.id} testID={`created-${c.id}`} onPress={() => openFor(c).catch(() => toast("No se pudo abrir WhatsApp", "error"))} style={s.row}>
               <Ionicons name={c.sent ? "checkmark-circle" : "logo-whatsapp"} size={20} color={c.sent ? colors.success : colors.muted} />

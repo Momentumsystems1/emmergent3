@@ -142,7 +142,7 @@ export default function MapHome() {
           <Animated.View entering={FadeInDown} exiting={FadeOut} style={{ marginTop: spacing.sm + 56 }}>
             <Glass style={{ padding: spacing.md }} testID="location-permission-banner">
               <T weight="bold" style={{ fontSize: 13 }}>Permiso de ubicación del dispositivo</T>
-              <T style={{ color: colors.muted, fontSize: 12, marginTop: 2 }}>Compartes tu ubicación con tu grupo; Sentinel necesita el permiso del sistema (solo con la app abierta).</T>
+              <T style={{ color: colors.muted, fontSize: 12, marginTop: 2 }}>Compartes tu ubicación con tu grupo; MY CLUSTER necesita el permiso del sistema (solo con la app abierta).</T>
               <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: spacing.sm }}>
                 {loc.perm === "blocked" ? <Button small testID="location-open-settings" title="Abrir ajustes" onPress={loc.openSettings} /> : <Button small testID="location-request" title="Permitir" onPress={async () => { const ok = await loc.request(); if (!ok) toast("Sin permiso, tu grupo verá “Ubicación no compartida”"); }} />}
                 <Button small testID="location-later" title="Ahora no" variant="ghost" onPress={() => setLocBanner(false)} />

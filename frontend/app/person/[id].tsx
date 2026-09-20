@@ -33,7 +33,7 @@ export default function Person() {
       case "seguir": return p?.state === "shared" ? router.push({ pathname: "/convoy/new", params: { group, lat: String(p.lat), lng: String(p.lng), place: name } }) : toast("Esta persona no comparte ubicación");
       case "todo_bien": case "incidencia":
         try { await api("/events", { method: "POST", json: { group_id: group, kind: key === "todo_bien" ? "checkin" : "incident", severity: key === "todo_bien" ? "info" : "warning", target_user_id: p?.user_id ?? m?.user_id, message: key === "todo_bien" ? `¿Todo bien, ${name}?` : `Incidencia relacionada con ${name}` } }); return toast("Enviado al grupo con trazabilidad", "success"); } catch (e: any) { return toast(e.message, "error"); }
-      case "mensaje": return Linking.openURL(`sms:?&body=${encodeURIComponent(`Hola ${name}, te escribo desde Sentinel.`)}`).catch(() => toast("Mensajes no disponible"));
+      case "mensaje": return Linking.openURL(`sms:?&body=${encodeURIComponent(`Hola ${name}, te escribo desde MY CLUSTER.`)}`).catch(() => toast("Mensajes no disponible"));
       case "comparticion": return router.push("/privacy");
       case "actividad": return router.push(`/group/${group}?tab=events`);
       default: return toast("Función en preparación");

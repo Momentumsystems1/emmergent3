@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Sentinel Family",
+    "name": "MY CLUSTER",
     "slug": "sentinel-family",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -21,7 +21,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#060B16"
+        "backgroundColor": "#D93025"
       },
       "package": "com.emergent.sentinelaudit.chvfyq",
       "permissions": [
@@ -46,7 +46,7 @@
           "image": "./assets/images/splash-image.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#060B16"
+          "backgroundColor": "#FFFFFF"
         }
       ],
       "expo-font",

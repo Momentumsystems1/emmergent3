@@ -88,7 +88,8 @@ function GoogleMapCanvas(props: MapCanvasProps) {
   const { colors, scheme } = useTheme();
   const hostRef = useRef<any>(null);
   const mapRef = useRef<any>(null);
-  const markersRef = useRef<any[]>([]);
+  const markersMap = useRef(new Map<string, any>()); // diff por id: update en vez de recrear
+  const listenersRef = useRef<any[]>([]); // todos los listeners mueren al desmontar
   const polyRef = useRef<any>(null);
   const trafficRef = useRef<any>(null);
   const [failed, setFailed] = useState(false);
@@ -116,17 +117,27 @@ function GoogleMapCanvas(props: MapCanvasProps) {
         backgroundColor: colors.mapTint,
       });
       if (center) map.setTilt(45); // 3D — efectivo en vector (mapId) o satélite; ignorado en raster clásico
-      map.addListener("click", (e: any) => onMapPress?.({ lat: e.latLng.lat(), lng: e.latLng.lng() }));
-      map.addListener("dragstart", () => onUserPan?.());
+      const L = listenersRef.current;
+      L.push(map.addListener("click", (e: any) => onMapPress?.({ lat: e.latLng.lat(), lng: e.latLng.lng() })));
+      L.push(map.addListener("dragstart", () => onUserPan?.()));
       // long-press emulation (web has no native long-press)
       let lpTimer: any = null;
-      map.addListener("mousedown", (e: any) => { lpTimer = setTimeout(() => onMapLongPress?.({ lat: e.latLng.lat(), lng: e.latLng.lng() }), 550); });
-      ["mouseup", "dragstart"].forEach((ev) => map.addListener(ev, () => clearTimeout(lpTimer)));
+      L.push(map.addListener("mousedown", (e: any) => { lpTimer = setTimeout(() => onMapLongPress?.({ lat: e.latLng.lat(), lng: e.latLng.lng() }), 550); }));
+      ["mouseup", "dragstart"].forEach((ev) => L.push(map.addListener(ev, () => clearTimeout(lpTimer))));
       trafficRef.current = new maps.TrafficLayer();
       mapRef.current = map;
       setReady(true);
     }).catch(() => setFailed(true));
-    return () => { dead = true; };
+    return () => {
+      dead = true;
+      listenersRef.current.forEach((l) => l?.remove?.());
+      listenersRef.current = [];
+      markersMap.current.forEach((m) => { window.google?.maps?.event?.clearInstanceListeners?.(m); m.setMap(null); });
+      markersMap.current.clear();
+      polyRef.current?.setMap(null); polyRef.current = null;
+      trafficRef.current?.setMap(null); trafficRef.current = null;
+      mapRef.current = null;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -143,29 +154,32 @@ function GoogleMapCanvas(props: MapCanvasProps) {
   // traffic layer
   useEffect(() => { if (ready && trafficRef.current) trafficRef.current.setMap(traffic ? mapRef.current : null); }, [ready, traffic]);
 
-  // markers redraw (simple + robust: data volumes are tiny in a family map)
+  // markers sync: create once, then setPosition/setIcon — no parpadeo ni recreación en cada poll
   useEffect(() => {
     if (!ready || !mapRef.current || !window.google) return;
     const maps = window.google.maps;
-    markersRef.current.forEach((m) => m.setMap(null));
-    markersRef.current = [];
-    incidents.forEach((i) => {
-      const mk = new maps.Marker({ position: { lat: i.lat, lng: i.lng }, map: mapRef.current, icon: incidentIconG(!!i.road_closed), title: i.title ?? "", zIndex: 2 });
-      mk.addListener("click", () => onIncidentPress?.(i));
-      markersRef.current.push(mk);
+    const alive = new Set<string>();
+    const upsert = (id: string, pos: { lat: number; lng: number }, icon: any, title: string, zIndex: number, onClick?: () => void) => {
+      alive.add(id);
+      let m = markersMap.current.get(id);
+      if (!m) {
+        m = new maps.Marker({ map: mapRef.current, zIndex, title });
+        m.__mcClick = onClick;
+        m.addListener("click", () => m.__mcClick?.());
+        markersMap.current.set(id, m);
+      }
+      m.setPosition(pos);
+      m.setIcon(icon);
+      m.setTitle(title);
+      m.setZIndex(zIndex);
+    };
+    incidents.forEach((i) => upsert(`inc-${i.id}`, { lat: i.lat, lng: i.lng }, incidentIconG(!!i.road_closed), i.title ?? "", 2, () => onIncidentPress?.(i)));
+    located.forEach((p) => upsert(`person-${p.member_id}`, { lat: p.lat!, lng: p.lng! }, personIcon(p, !!p.is_me), p.name, p.is_me ? 4 : 3, () => onPersonPress?.(p)));
+    pins.forEach((p) => upsert(`pin-${p.id}`, { lat: p.lat, lng: p.lng }, pinIcon(p.color ?? colors.brandPrimary), p.title ?? "", 2, undefined));
+    if (selected) upsert("selected", { lat: selected.lat, lng: selected.lng }, pinIcon(colors.brandPrimary), "", 5, undefined);
+    markersMap.current.forEach((m, id) => {
+      if (!alive.has(id)) { window.google.maps.event.clearInstanceListeners(m); m.setMap(null); markersMap.current.delete(id); }
     });
-    located.forEach((p) => {
-      const mk = new maps.Marker({ position: { lat: p.lat!, lng: p.lng! }, map: mapRef.current, icon: personIcon(p, !!p.is_me), title: p.name, zIndex: p.is_me ? 4 : 3 });
-      (mk as any).gmTestId = `map-person-${p.member_id}`;
-      mk.addListener("click", () => onPersonPress?.(p));
-      markersRef.current.push(mk);
-    });
-    pins.forEach((p) => {
-      markersRef.current.push(new maps.Marker({ position: { lat: p.lat, lng: p.lng }, map: mapRef.current, icon: pinIcon(p.color ?? colors.brandPrimary), title: p.title, zIndex: 2 }));
-    });
-    if (selected) {
-      markersRef.current.push(new maps.Marker({ position: { lat: selected.lat, lng: selected.lng }, map: mapRef.current, icon: pinIcon(colors.brandPrimary), zIndex: 5 }));
-    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, JSON.stringify(located.map((p) => [p.member_id, p.lat, p.lng, p.color, p.name])), JSON.stringify(incidents.map((i) => [i.id, i.lat, i.lng])), JSON.stringify(pins.map((p) => [p.id, p.lat, p.lng])), selected?.lat, selected?.lng, scheme]);
 

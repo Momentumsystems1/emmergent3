@@ -9,7 +9,7 @@ import Ionicons from "@react-native-vector-icons/ionicons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Location from "expo-location";
 import { useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
 import Animated, { FadeInDown, FadeOut } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -31,6 +31,7 @@ import { useLocationSharing } from "@/src/hooks/useLocationSharing";
 import { fonts, makeStyles, radius, spacing, useTheme } from "@/src/theme";
 import { storage } from "@/src/utils/storage";
 import { fetchGroups } from "@/src/groups";
+import { fetchZones, insertZoneEvent, insideZone } from "@/src/zones";
 
 const distM = (a: LatLng, b: LatLng) => { const R = 6371000, dLat = ((b.lat - a.lat) * Math.PI) / 180, dLng = ((b.lng - a.lng) * Math.PI) / 180; const h = Math.sin(dLat / 2) ** 2 + Math.cos((a.lat * Math.PI) / 180) * Math.cos((b.lat * Math.PI) / 180) * Math.sin(dLng / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(h)); };
 const fmtDist = (m: number) => (m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`);
@@ -56,6 +57,7 @@ export default function MapHome() {
 
   const groups = useQuery({ queryKey: ["groups"], queryFn: fetchGroups, refetchInterval: 15000 });
   const group: any = groups.data?.[0];
+  const zones = useQuery({ queryKey: ["zones", group?.id], enabled: !!group, refetchInterval: 30000, queryFn: () => fetchZones(group.id) });
   const perms = useQuery({ queryKey: ["permissions"], queryFn: fetchPermissionsRecord });
   const positions = useQuery({ queryKey: ["positions", group?.id], enabled: !!group, refetchInterval: 10000, queryFn: () => api<MapPerson[]>(`/groups/${group.id}/positions`) });
   const sharesLocation = !!perms.data && Object.values(perms.data).some((v: any) => v.effective && (v.key === "exact_location" || v.key === "approx_location"));
@@ -100,6 +102,27 @@ export default function MapHome() {
   // eslint-disable-next-line react-hooks/set-state-in-effect, react-hooks/exhaustive-deps -- one-shot centering on the first GPS fix
   useEffect(() => { if (mePos && !focus) setFocus({ lat: mePos.lat, lng: mePos.lng, key: 1 }); }, [mePos?.lat, mePos?.lng, focus]);
 
+  // Transiciones de cercas: al cambiar mi posición, detecto entradas/salidas y las registro.
+  // RLS solo deja insertar eventos propios (user_id = auth.uid()): el aviso de otros miembros
+  // llega cuando SU dispositivo registra la transición (cada móvil evalúa lo suyo).
+  const zoneState = useRef<Record<string, boolean>>({});
+  useEffect(() => {
+    if (!mePos || !zones.data?.length || !user?.id || !group?.id) return;
+    for (const z of zones.data.filter((x) => x.is_active)) {
+      const now = insideZone(mePos, z);
+      const before = zoneState.current[z.id];
+      if (before === undefined) { zoneState.current[z.id] = now; continue; } // primera lectura: siembra sin avisar
+      if (now !== before) {
+        zoneState.current[z.id] = now;
+        toast(now ? `Has entrado en ${z.name}` : `Has salido de ${z.name}`, now ? "success" : "info");
+        insertZoneEvent({ group_id: group.id, zone_id: z.id, user_id: user.id, event: now ? "enter" : "exit" })
+          .then(() => qc.invalidateQueries({ queryKey: ["zone-events", group.id] }))
+          .catch(() => null);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mePos?.lat, mePos?.lng, zones.data, user?.id, group?.id]);
+
   const closeAll = () => { setSel(null); setMemberSel(null); setSharing(false); setTrafficPanel(false); setIncSel(null); setUserOpen(false); setSosOpen(false); };
   const anyOpen = !!sel || !!memberSel || sharing || trafficPanel || !!incSel || userOpen || sosOpen || (locBanner && loc.perm !== "granted");
   const onMapPress = (c?: LatLng) => { if (anyOpen) { closeAll(); setLocBanner(false); return; } if (c) setSel(c); };
@@ -124,6 +147,7 @@ export default function MapHome() {
   return (
     <View style={s.root} testID="map-home">
       <MapCanvas people={people} center={focus} selected={sel} onMapPress={onMapPress} onMapLongPress={(c) => { closeAll(); setSel(c); }}
+        circles={(zones.data ?? []).map((z) => ({ id: z.id, lat: z.lat, lng: z.lng, radius_m: z.radius_m, title: z.name, active: z.is_active }))}
         traffic={traffic} incidents={traffic ? incidents.data ?? [] : []} onIncidentPress={(i) => { closeAll(); setIncSel(i); }}
         onPersonPress={(p) => { closeAll(); if (p.member_id === "me-local") router.push("/profile"); else router.push(`/person/${p.member_id}?group=${group?.id}`); }} />
 
@@ -247,6 +271,7 @@ export default function MapHome() {
             <Tool testID="sel-go" icon="navigate" label="Ir" primary onPress={() => { router.push({ pathname: "/drive", params: { ...originParams, lat: String(sel.lat), lng: String(sel.lng), place: selName } }); setSel(null); }} />
             <Tool testID="sel-meet" icon="calendar" label="Quedar aquí" onPress={() => { if (!group) return toast("Crea un grupo primero"); router.push({ pathname: "/meeting/new", params: { group: group.id, lat: String(sel.lat), lng: String(sel.lng), place: selName } }); setSel(null); }} />
             <Tool testID="sel-convoy" icon="car-sport" label="Convoy" onPress={() => { if (!group) return toast("Crea un grupo primero"); router.push({ pathname: "/convoy/new", params: { group: group.id, lat: String(sel.lat), lng: String(sel.lng), place: selName } }); setSel(null); }} />
+            <Tool testID="sel-fence" icon="radio-button-on" label="Cerca" onPress={() => { if (!group) return toast("Crea un grupo primero"); router.push({ pathname: "/fences/new", params: { group: group.id, lat: String(sel.lat), lng: String(sel.lng), place: selName } }); setSel(null); }} />
           </View>
         </Animated.View>
       ) : null}

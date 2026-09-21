@@ -19,6 +19,7 @@ export function MainMenu({ visible, onClose, groups }: { visible: boolean; onClo
       <Item testID="menu-profile" icon="person" label="Mi perfil" sub="Nombre, foto, color y avatar" onPress={() => go("/profile")} />
       <Item testID="menu-privacy" icon="lock-closed" label="Privacidad y visibilidad" sub="Qué compartes, con quién y con qué precisión" onPress={() => go("/privacy")} />
       <Item testID="menu-sensors" icon="speedometer" label="Sensores y calibración" sub="Acelerómetro, giroscopio, brújula y GPS en vivo" onPress={() => go("/sensors")} />
+      <Item testID="menu-fences" icon="radio-button-on" label="Cercas" sub="Avisos al entrar o salir de casa, trabajo, colegio…" onPress={() => go("/fences")} />
       {groups.map((g) => <Item key={g.id} testID={`menu-group-${g.id}`} icon="people" label={g.name} sub="Miembros, invitaciones y permisos" onPress={() => go(`/group/${g.id}`)} />)}
       <Item testID="menu-groups-manage" icon="add-circle" label="Crear o editar grupos" onPress={() => go("/onboarding/group")} />
       <Item testID="menu-plans" icon="card" label="Plan y límites" onPress={() => go("/plans")} />

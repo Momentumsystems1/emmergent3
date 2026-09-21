@@ -105,3 +105,7 @@ export async function api<T = any>(path: string, init: RequestInit & { json?: an
 }
 
 export const clientMeta = { platform: Platform.OS, app_version: "1.0.0", language: "es" };
+
+// Acceso para el cliente PostgREST (src/db.ts): mismo JWT de la app, mismo refresh single-flight.
+export function currentAccessToken(): string | null { return access; }
+export function refreshAccess(): Promise<boolean> { return refresh(); }

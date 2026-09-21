@@ -4,11 +4,16 @@ export type MapPin = { id: string; lat: number; lng: number; title: string; colo
 export type LatLng = { lat: number; lng: number };
 export type Incident = { id: string; lat: number; lng: number; type?: string; title?: string; description?: string; severity?: number; delay_s?: number; road_closed?: boolean; jam?: boolean };
 
+/** Cerca geográfica dibujada en el mapa (círculo translúcido + etiqueta). */
+export type MapCircle = { id: string; lat: number; lng: number; radius_m: number; title: string; active?: boolean };
+
 export const INCIDENT_TYPE: Record<string, string> = { Accident: "Accidente", Congestion: "Retención", Construction: "Obras", DisabledVehicle: "Vehículo averiado", LaneRestriction: "Carril cortado", MassTransit: "Transporte público", Miscellaneous: "Incidencia", OtherNews: "Aviso", PlannedEvent: "Evento", RoadClosure: "Vía cortada", RoadHazard: "Peligro en la vía", Weather: "Meteorología", Jam: "Atasco", Fog: "Niebla", Rain: "Lluvia", Ice: "Hielo", Wind: "Viento", Flooding: "Inundación", BrokenDownVehicle: "Vehículo averiado", RoadWorks: "Obras" };
 export const incidentIcon = (i: Incident) => (i.road_closed ? "close-circle" : i.jam ? "car" : /Construction|RoadWorks/i.test(i.type ?? "") ? "construct" : /Accident/i.test(i.type ?? "") ? "warning" : /Weather|Fog|Rain|Ice|Wind|Flood/i.test(i.type ?? "") ? "rainy" : "alert-circle");
 
 export type MapCanvasProps = {
   people: MapPerson[]; pins?: MapPin[]; polyline?: [number, number][]; onPersonPress?: (p: MapPerson) => void;
+  /** Cercas del grupo dibujadas como círculos. */
+  circles?: MapCircle[];
   /** Animates the camera whenever lat/lng/key change (key lets the caller re-center on the same coordinates). */
   center?: LatLng & { key?: number };
   /** Navigator-like zoom by default (~1 km). */

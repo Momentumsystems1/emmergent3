@@ -84,11 +84,12 @@ function pinIcon(color: string): { url: string; scaledSize: any; anchor: any } {
 
 // ---------- interactive Google canvas ----------
 function GoogleMapCanvas(props: MapCanvasProps) {
-  const { people, pins = [], polyline, onPersonPress, center, zoomDelta = 0.01, onMapPress, onMapLongPress, onUserPan, selected, traffic, incidents = [], onIncidentPress } = props;
+  const { people, pins = [], polyline, circles = [], onPersonPress, center, zoomDelta = 0.01, onMapPress, onMapLongPress, onUserPan, selected, traffic, incidents = [], onIncidentPress } = props;
   const { colors, scheme } = useTheme();
   const hostRef = useRef<any>(null);
   const mapRef = useRef<any>(null);
   const markersMap = useRef(new Map<string, any>()); // diff por id: update en vez de recrear
+  const circlesMap = useRef(new Map<string, any>()); // cercas: diff por id
   const listenersRef = useRef<any[]>([]); // todos los listeners mueren al desmontar
   const polyRef = useRef<any>(null);
   const trafficRef = useRef<any>(null);
@@ -134,6 +135,8 @@ function GoogleMapCanvas(props: MapCanvasProps) {
       listenersRef.current = [];
       markersMap.current.forEach((m) => { window.google?.maps?.event?.clearInstanceListeners?.(m); m.setMap(null); });
       markersMap.current.clear();
+      circlesMap.current.forEach((c) => c.setMap(null));
+      circlesMap.current.clear();
       polyRef.current?.setMap(null); polyRef.current = null;
       trafficRef.current?.setMap(null); trafficRef.current = null;
       mapRef.current = null;
@@ -183,6 +186,30 @@ function GoogleMapCanvas(props: MapCanvasProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, JSON.stringify(located.map((p) => [p.member_id, p.lat, p.lng, p.color, p.name])), JSON.stringify(incidents.map((i) => [i.id, i.lat, i.lng])), JSON.stringify(pins.map((p) => [p.id, p.lat, p.lng])), selected?.lat, selected?.lng, scheme]);
 
+  // cercas: círculos translúcidos de marca (diff por id; el radio solo cambia al crearla)
+  useEffect(() => {
+    if (!ready || !mapRef.current || !window.google) return;
+    const maps = window.google.maps;
+    const alive = new Set<string>();
+    circles.forEach((c) => {
+      alive.add(c.id);
+      let cir = circlesMap.current.get(c.id);
+      const stroke = c.active === false ? "#9AA0A6" : colors.brandPrimary;
+      if (!cir) {
+        cir = new maps.Circle({ map: mapRef.current, clickable: false });
+        circlesMap.current.set(c.id, cir);
+      }
+      cir.setCenter({ lat: c.lat, lng: c.lng });
+      cir.setRadius(c.radius_m);
+      cir.setOptions({
+        strokeColor: stroke, strokeOpacity: 0.9, strokeWeight: 2,
+        fillColor: stroke, fillOpacity: 0.08,
+      });
+    });
+    circlesMap.current.forEach((cir, id) => { if (!alive.has(id)) { cir.setMap(null); circlesMap.current.delete(id); } });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, JSON.stringify(circles.map((c) => [c.id, c.lat, c.lng, c.radius_m, c.active]))]);
+
   // polyline
   useEffect(() => {
     if (!ready || !window.google) return;
@@ -206,7 +233,7 @@ function GoogleMapCanvas(props: MapCanvasProps) {
 
 // ---------- static fallback (previous renderer, backend-proxied image) ----------
 const zoomForS = zoomFor;
-function StaticMapCanvas({ people, pins = [], polyline, onPersonPress, center, zoomDelta = 0.01, onMapPress, onMapLongPress, selected, incidents = [], onIncidentPress }: MapCanvasProps) {
+function StaticMapCanvas({ people, pins = [], polyline, circles = [], onPersonPress, center, zoomDelta = 0.01, onMapPress, onMapLongPress, selected, incidents = [], onIncidentPress }: MapCanvasProps) {
   const s = useStyles();
   const { colors, scheme } = useTheme();
   const [size, setSize] = useState({ w: 0, h: 0 });
@@ -235,6 +262,19 @@ function StaticMapCanvas({ people, pins = [], polyline, onPersonPress, center, z
       onPress={(e) => onMapPress?.(at(e))} onLongPress={(e) => onMapLongPress?.(at(e))}>
       {uri ? <Image source={{ uri }} style={{ position: "absolute", left: 0, top: 0, width: size.w, height: size.h }} onLoad={() => setLoaded(true)} onError={() => setLoaded(false)} testID="map-static-image" /> : null}
       {!loaded ? <View style={s.loading} pointerEvents="none"><Text style={s.noticeTxt}>Cargando mapa…</Text></View> : null}
+      {/* cercas: círculo proyectado (metros → píxeles según zoom) + etiqueta */}
+      {circles.map((c) => {
+        const p = proj(c.lat, c.lng);
+        const mpp = (156543.03392 * Math.cos((c.lat * Math.PI) / 180)) / 2 ** z;
+        const rpx = c.radius_m / mpp;
+        if (p.left + rpx < 0 || p.left - rpx > size.w || p.top + rpx < 0 || p.top - rpx > size.h) return null;
+        const stroke = c.active === false ? colors.muted : colors.brandPrimary;
+        return (
+          <View key={c.id} pointerEvents="none" style={[s.abs, { left: p.left - rpx, top: p.top - rpx, width: rpx * 2, height: rpx * 2, borderRadius: rpx, borderWidth: 2, borderColor: stroke, backgroundColor: `${stroke}14` }]}> 
+            {rpx > 34 ? <Text style={[s.pinTxt, { marginTop: 6 }]}>{c.title}</Text> : null}
+          </View>
+        );
+      })}
       {incidents.filter((i) => inView(i.lat, i.lng)).map((i) => (
         <Pressable key={i.id} testID={`map-incident-${i.id}`} onPress={() => onIncidentPress?.(i)} style={[s.abs, proj(i.lat, i.lng), { marginLeft: -13, marginTop: -13 }]}>
           <View style={[s.inc, { backgroundColor: i.road_closed ? colors.error : colors.warning }]}><Ionicons name={incidentIcon(i) as any} size={14} color={i.road_closed ? colors.onError : colors.onWarning} /></View>

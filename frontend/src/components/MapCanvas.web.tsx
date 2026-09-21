@@ -194,7 +194,7 @@ function GoogleMapCanvas(props: MapCanvasProps) {
     circles.forEach((c) => {
       alive.add(c.id);
       let cir = circlesMap.current.get(c.id);
-      const stroke = c.active === false ? "#9AA0A6" : colors.brandPrimary;
+      const stroke = c.active === false ? "#9AA0A6" : c.occupied ? "#34A853" : colors.brandPrimary;
       if (!cir) {
         cir = new maps.Circle({ map: mapRef.current, clickable: false });
         circlesMap.current.set(c.id, cir);
@@ -203,12 +203,12 @@ function GoogleMapCanvas(props: MapCanvasProps) {
       cir.setRadius(c.radius_m);
       cir.setOptions({
         strokeColor: stroke, strokeOpacity: 0.9, strokeWeight: 2,
-        fillColor: stroke, fillOpacity: 0.08,
+        fillColor: stroke, fillOpacity: c.occupied ? 0.14 : 0.08,
       });
     });
     circlesMap.current.forEach((cir, id) => { if (!alive.has(id)) { cir.setMap(null); circlesMap.current.delete(id); } });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, JSON.stringify(circles.map((c) => [c.id, c.lat, c.lng, c.radius_m, c.active]))]);
+  }, [ready, JSON.stringify(circles.map((c) => [c.id, c.lat, c.lng, c.radius_m, c.active, c.occupied]))]);
 
   // polyline
   useEffect(() => {
@@ -268,9 +268,9 @@ function StaticMapCanvas({ people, pins = [], polyline, circles = [], onPersonPr
         const mpp = (156543.03392 * Math.cos((c.lat * Math.PI) / 180)) / 2 ** z;
         const rpx = c.radius_m / mpp;
         if (p.left + rpx < 0 || p.left - rpx > size.w || p.top + rpx < 0 || p.top - rpx > size.h) return null;
-        const stroke = c.active === false ? colors.muted : colors.brandPrimary;
+        const stroke = c.active === false ? colors.muted : c.occupied ? colors.success : colors.brandPrimary;
         return (
-          <View key={c.id} pointerEvents="none" style={[s.abs, { left: p.left - rpx, top: p.top - rpx, width: rpx * 2, height: rpx * 2, borderRadius: rpx, borderWidth: 2, borderColor: stroke, backgroundColor: `${stroke}14` }]}> 
+          <View key={c.id} pointerEvents="none" style={[s.abs, { left: p.left - rpx, top: p.top - rpx, width: rpx * 2, height: rpx * 2, borderRadius: rpx, borderWidth: 2, borderColor: stroke, backgroundColor: `${stroke}${c.occupied ? "24" : "14"}` }]}>
             {rpx > 34 ? <Text style={[s.pinTxt, { marginTop: 6 }]}>{c.title}</Text> : null}
           </View>
         );

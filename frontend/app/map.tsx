@@ -150,7 +150,7 @@ export default function MapHome() {
   return (
     <View style={s.root} testID="map-home">
       <MapCanvas people={people} center={focus} selected={sel} onMapPress={onMapPress} onMapLongPress={(c) => { closeAll(); setSel(c); }}
-        circles={(zones.data ?? []).map((z) => ({ id: z.id, lat: z.lat, lng: z.lng, radius_m: z.radius_m, title: z.name, active: z.is_active }))}
+        circles={(zones.data ?? []).map((z) => ({ id: z.id, lat: z.lat, lng: z.lng, radius_m: z.radius_m, title: z.name, active: z.is_active, occupied: people.some((p) => p.lat != null && p.lng != null && insideZone({ lat: p.lat, lng: p.lng }, z)) }))}
         traffic={traffic} incidents={traffic ? incidents.data ?? [] : []} onIncidentPress={(i) => { closeAll(); setIncSel(i); }}
         onPersonPress={(p) => { closeAll(); if (p.member_id === "me-local") router.push("/profile"); else router.push(`/person/${p.member_id}?group=${group?.id}`); }} />
 

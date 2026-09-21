@@ -119,11 +119,12 @@ export default function FencesScreen() {
             <T weight="bold" style={{ fontSize: 14 }} testID="fences-activity">Actividad reciente</T>
             {events.data!.slice(0, 10).map((e) => {
               const z = (zones.data ?? []).find((x) => x.id === e.zone_id);
+              const isMe = e.user_id === user?.id;
               return (
                 <View key={e.id} style={s.eventRow} testID={`zone-event-${e.id}`}>
                   <Ionicons name={e.event === "enter" ? "log-in" : "log-out"} size={15} color={e.event === "enter" ? colors.success : colors.warning} />
                   <T style={{ fontSize: 12.5, flex: 1 }} numberOfLines={1}>
-                    {nameOf(e.user_id)} {e.event === "enter" ? "entró en" : "salió de"} {z?.name ?? "una cerca"}
+                    {isMe ? "Tú has" : `${nameOf(e.user_id)} ha`} {e.event === "enter" ? "entrado en" : "salido de"} {z?.name ?? "una cerca"}
                   </T>
                 </View>
               );

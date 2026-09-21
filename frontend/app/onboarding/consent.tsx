@@ -26,7 +26,8 @@ export default function Consent() {
   const save = useMutation({
     mutationFn: async () => {
       const cats = catalog.data ?? [];
-      for (const c of cats) await api("/permissions", { method: "POST", json: { key: c.key, granted: !!on[c.key], scope: "all", reason: "onboarding" } });
+      // En paralelo: 12 permisos secuenciales eran ~15 s de spinner (parecía colgado).
+      await Promise.all(cats.map((c) => api("/permissions", { method: "POST", json: { key: c.key, granted: !!on[c.key], scope: "all", reason: "onboarding" } })));
       await api("/profile/onboarding-step", { method: "PUT", json: { step: "profile" } });
     },
     onSuccess: async () => { await qc.invalidateQueries({ queryKey: ["permissions"] }); await reload(); router.replace("/onboarding/profile"); },

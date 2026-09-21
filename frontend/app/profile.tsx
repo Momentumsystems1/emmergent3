@@ -4,7 +4,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
 import { useState } from "react";
-import { ActivityIndicator, Linking, Pressable, TextInput, View } from "react-native";
+import { ActivityIndicator, Linking, Platform, Pressable, TextInput, View } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -39,7 +39,13 @@ export default function ProfileScreen() {
       const form = new FormData();
       const ext = uri.split(".").pop()?.toLowerCase();
       const type = ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
-      form.append("file", { uri, name: `avatar.${ext || "jpg"}`, type } as any);
+      if (Platform.OS === "web") {
+        // En web uri es blob:/data: y FormData necesita un Blob real, no el objeto {uri} de RN
+        const blob = await (await fetch(uri)).blob();
+        form.append("file", blob, `avatar.${ext === "png" || ext === "webp" ? ext : "jpg"}`);
+      } else {
+        form.append("file", { uri, name: `avatar.${ext || "jpg"}`, type } as any);
+      }
       const r = await fetch(`${BASE}/profile/photo`, { method: "POST", headers: { Authorization: `Bearer ${t?.access_token}` }, body: form });
       if (!r.ok) { const b = await r.json().catch(() => null); throw new Error(b?.detail ?? "No se pudo subir la foto"); }
       await reload(); setPhotoV((v) => v + 1); toast("Foto actualizada", "success");

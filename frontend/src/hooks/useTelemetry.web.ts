@@ -30,20 +30,35 @@ export function useTelemetry(active: boolean): Telemetry {
       } catch { /* sin batería: el HUD oculta ese dato */ }
     })();
 
+    // GPS solo si el permiso YA está concedido: la telemetría nunca provoca el prompt
+    // del navegador (ese momento pertenece al flujo contextual de ubicación). Si el
+    // permiso llega después —por la vía que sea—, el watcher arranca solo.
     let watchId: number | null = null;
-    try {
-      if (navigator.geolocation) {
+    let permStatus: PermissionStatus | null = null;
+    const startWatch = () => {
+      if (watchId != null || !navigator.geolocation) return;
+      try {
         watchId = navigator.geolocation.watchPosition(
           (p) => setSpeedKmh(p.coords.speed != null ? Math.max(0, p.coords.speed * 3.6) : null),
           () => null,
           { enableHighAccuracy: true, maximumAge: 5000 },
         );
-      }
-    } catch { /* sin GPS */ }
+      } catch { /* sin GPS */ }
+    };
+    (async () => {
+      try {
+        const nav: any = navigator;
+        if (!nav.permissions?.query) return;
+        permStatus = await nav.permissions.query({ name: "geolocation" as PermissionName });
+        if (permStatus!.state === "granted") startWatch();
+        permStatus!.onchange = () => { if (permStatus!.state === "granted") startWatch(); };
+      } catch { /* sin permissions API: no arrancamos nada para no disparar el prompt */ }
+    })();
 
     return () => {
       if (bat && onLevel) bat.removeEventListener("levelchange", onLevel);
       if (watchId != null) navigator.geolocation.clearWatch(watchId);
+      if (permStatus) permStatus.onchange = null;
     };
   }, [active]);
 

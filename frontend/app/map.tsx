@@ -94,9 +94,23 @@ export default function MapHome() {
   useEffect(() => { if (sharesLocation && loc.perm !== "granted") setLocBanner(true); }, [sharesLocation, loc.perm]);
   useEffect(() => { if (loc.lastSentAt) qc.invalidateQueries({ queryKey: ["positions"] }); }, [loc.lastSentAt, qc]);
   // Device position (stays on the device unless a location permission is effective) → centering + navigation origin.
+  // Un intento único puede volver vacío si el primer fix tarda: cae a un watch hasta el primer dato.
   useEffect(() => {
     if (loc.perm !== "granted") return;
-    Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }).then((p) => setMyPos({ lat: p.coords.latitude, lng: p.coords.longitude })).catch(() => null);
+    let cancelled = false;
+    let sub: Location.LocationSubscription | null = null;
+    Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced })
+      .then((p) => { if (!cancelled) setMyPos({ lat: p.coords.latitude, lng: p.coords.longitude }); })
+      .catch(async () => {
+        try {
+          sub = await Location.watchPositionAsync({ accuracy: Location.Accuracy.Balanced }, (p) => {
+            if (cancelled) return;
+            setMyPos({ lat: p.coords.latitude, lng: p.coords.longitude });
+            sub?.remove(); sub = null;
+          });
+        } catch { /* sin posición local: la UI lo muestra con claridad */ }
+      });
+    return () => { cancelled = true; sub?.remove(); };
   }, [loc.perm]);
 
   const served = positions.data ?? [];

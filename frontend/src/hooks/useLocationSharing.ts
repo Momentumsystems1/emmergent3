@@ -31,6 +31,24 @@ export function useLocationSharing(enabled: boolean) {
 
   useEffect(() => { check(); }, [check]);
 
+  // Web: si el permiso cambia por CUALQUIER vía (prompt del navegador, ajustes del sistema,
+  // otra pestaña), re-evaluamos. Sin esto, conceder el permiso fuera del botón "Permitir"
+  // dejaba la app sin aplicar la ubicación hasta recargar.
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+    let ps: any = null;
+    let alive = true;
+    (navigator as any).permissions?.query?.({ name: "geolocation" })
+      .then((s: any) => {
+        if (!alive) return;
+        ps = s;
+        s.onchange = () => check();
+        check(); // por si se concedió entre el mount y esta consulta
+      })
+      .catch(() => null);
+    return () => { alive = false; if (ps) ps.onchange = null; };
+  }, [check]);
+
   useEffect(() => {
     if (!enabled || perm !== "granted") { sub.current?.remove(); sub.current = null; return; }
     let cancelled = false;

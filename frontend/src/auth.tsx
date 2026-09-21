@@ -3,6 +3,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import { Platform } from "react-native";
 
 import { api, clientMeta, loadTokens, saveTokens } from "@/src/api";
+import { toast } from "@/src/components/ui";
 import { cleanWebUrl, extractSessionId, openGoogleSignIn } from "@/src/googleAuth";
 import { storage } from "@/src/utils/storage";
 
@@ -99,7 +100,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // A session_id on the URL always wins over a stored session (Critical Rule 3).
       const url = Platform.OS === "web" ? window.location.href : await Linking.getInitialURL();
       const sid = extractSessionId(url);
-      if (sid) { try { await exchange(sid); return; } catch { /* fall back to stored session */ } }
+      if (sid) {
+        try { await exchange(sid); return; }
+        catch (e: any) {
+          // Fallo visible, nunca rebote silencioso al onboarding (el usuario debe saber que el enlace caducó)
+          toast(e?.message && typeof e.message === "string" && e.message.length < 120 ? e.message : "El enlace de acceso ha caducado. Inténtalo de nuevo.", "error");
+        }
+      }
       await reload();
     })().finally(() => setLoading(false));
     if (Platform.OS === "web") return;

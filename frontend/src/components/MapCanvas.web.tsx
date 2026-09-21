@@ -3,7 +3,7 @@
 // Same props contract as the native canvas (mapTypes.ts) — callers don't change.
 import Ionicons from "@react-native-vector-icons/ionicons";
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Image, Pressable, Text, View } from "react-native";
+import { Animated, Image, Pressable, Text, View } from "react-native";
 
 import { BASE } from "@/src/api";
 import { incidentIcon, LatLng, MapCanvasProps, MapPerson } from "@/src/components/mapTypes";
@@ -90,6 +90,8 @@ function GoogleMapCanvas(props: MapCanvasProps) {
   const mapRef = useRef<any>(null);
   const markersMap = useRef(new Map<string, any>()); // diff por id: update en vez de recrear
   const circlesMap = useRef(new Map<string, any>()); // cercas: diff por id
+  const circleLabelsMap = useRef(new Map<string, any>()); // etiquetas de cerca: diff por id
+  const pulsePhase = useRef(0);
   const listenersRef = useRef<any[]>([]); // todos los listeners mueren al desmontar
   const polyRef = useRef<any>(null);
   const trafficRef = useRef<any>(null);
@@ -137,6 +139,8 @@ function GoogleMapCanvas(props: MapCanvasProps) {
       markersMap.current.clear();
       circlesMap.current.forEach((c) => c.setMap(null));
       circlesMap.current.clear();
+      circleLabelsMap.current.forEach((m) => m.setMap(null));
+      circleLabelsMap.current.clear();
       polyRef.current?.setMap(null); polyRef.current = null;
       trafficRef.current?.setMap(null); trafficRef.current = null;
       mapRef.current = null;
@@ -187,6 +191,7 @@ function GoogleMapCanvas(props: MapCanvasProps) {
   }, [ready, JSON.stringify(located.map((p) => [p.member_id, p.lat, p.lng, p.color, p.name])), JSON.stringify(incidents.map((i) => [i.id, i.lat, i.lng])), JSON.stringify(pins.map((p) => [p.id, p.lat, p.lng])), selected?.lat, selected?.lng, scheme]);
 
   // cercas: círculos translúcidos de marca (diff por id; el radio solo cambia al crearla)
+  // + etiqueta con el nombre sobre el círculo; las ocupadas pulsan (efecto aparte, abajo)
   useEffect(() => {
     if (!ready || !mapRef.current || !window.google) return;
     const maps = window.google.maps;
@@ -205,10 +210,39 @@ function GoogleMapCanvas(props: MapCanvasProps) {
         strokeColor: stroke, strokeOpacity: 0.9, strokeWeight: 2,
         fillColor: stroke, fillOpacity: c.occupied ? 0.14 : 0.08,
       });
+      // etiqueta: marcador con icono transparente y texto
+      let lab = circleLabelsMap.current.get(c.id);
+      if (!lab) {
+        lab = new maps.Marker({
+          map: mapRef.current, clickable: false, zIndex: 2,
+          icon: { url: "data:image/gif;base64,R0lGODlhAQABAAAAACw=", anchor: new maps.Point(0, 0) },
+        });
+        circleLabelsMap.current.set(c.id, lab);
+      }
+      lab.setPosition({ lat: c.lat, lng: c.lng });
+      lab.setLabel({ text: c.title, color: stroke, fontSize: "11px", fontWeight: "700" });
     });
     circlesMap.current.forEach((cir, id) => { if (!alive.has(id)) { cir.setMap(null); circlesMap.current.delete(id); } });
+    circleLabelsMap.current.forEach((lab, id) => { if (!alive.has(id)) { lab.setMap(null); circleLabelsMap.current.delete(id); } });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, JSON.stringify(circles.map((c) => [c.id, c.lat, c.lng, c.radius_m, c.active, c.occupied]))]);
+
+  // pulso sutil en cercas ocupadas (strokeOpacity oscila; respeta reduced-motion)
+  useEffect(() => {
+    if (!ready) return;
+    if (typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches) return;
+    const t = setInterval(() => {
+      pulsePhase.current = (pulsePhase.current + 1) % 4;
+      const up = pulsePhase.current < 2;
+      circles.forEach((c) => {
+        if (!c.occupied) return;
+        const cir = circlesMap.current.get(c.id);
+        if (cir) cir.setOptions({ strokeOpacity: up ? 0.95 : 0.4, fillOpacity: up ? 0.18 : 0.1, strokeWeight: up ? 3 : 2 });
+      });
+    }, 650);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, JSON.stringify(circles.map((c) => [c.id, c.occupied]))]);
 
   // polyline
   useEffect(() => {
@@ -232,6 +266,27 @@ function GoogleMapCanvas(props: MapCanvasProps) {
 }
 
 // ---------- static fallback (previous renderer, backend-proxied image) ----------
+
+// Anillo de cerca: pulso de opacidad suave cuando está ocupada (alguien del grupo dentro).
+function FenceRing({ occupied, stroke, style, children }: { occupied: boolean; stroke: string; style: any; children?: React.ReactNode }) {
+  const op = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    if (!occupied) { op.setValue(1); return; }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(op, { toValue: 0.45, duration: 650, useNativeDriver: true }),
+        Animated.timing(op, { toValue: 1, duration: 650, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [occupied, op]);
+  return (
+    <Animated.View pointerEvents="none" style={[style, { opacity: occupied ? op : 1 }]} testID={`fence-ring-${stroke}`}>
+      {children}
+    </Animated.View>
+  );
+}
 const zoomForS = zoomFor;
 function StaticMapCanvas({ people, pins = [], polyline, circles = [], onPersonPress, center, zoomDelta = 0.01, onMapPress, onMapLongPress, selected, incidents = [], onIncidentPress }: MapCanvasProps) {
   const s = useStyles();
@@ -262,7 +317,7 @@ function StaticMapCanvas({ people, pins = [], polyline, circles = [], onPersonPr
       onPress={(e) => onMapPress?.(at(e))} onLongPress={(e) => onMapLongPress?.(at(e))}>
       {uri ? <Image source={{ uri }} style={{ position: "absolute", left: 0, top: 0, width: size.w, height: size.h }} onLoad={() => setLoaded(true)} onError={() => setLoaded(false)} testID="map-static-image" /> : null}
       {!loaded ? <View style={s.loading} pointerEvents="none"><Text style={s.noticeTxt}>Cargando mapa…</Text></View> : null}
-      {/* cercas: círculo proyectado (metros → píxeles según zoom) + etiqueta */}
+      {/* cercas: círculo proyectado (metros → píxeles según zoom) + etiqueta; pulsa si hay alguien dentro */}
       {circles.map((c) => {
         const p = proj(c.lat, c.lng);
         const mpp = (156543.03392 * Math.cos((c.lat * Math.PI) / 180)) / 2 ** z;
@@ -270,9 +325,10 @@ function StaticMapCanvas({ people, pins = [], polyline, circles = [], onPersonPr
         if (p.left + rpx < 0 || p.left - rpx > size.w || p.top + rpx < 0 || p.top - rpx > size.h) return null;
         const stroke = c.active === false ? colors.muted : c.occupied ? colors.success : colors.brandPrimary;
         return (
-          <View key={c.id} pointerEvents="none" style={[s.abs, { left: p.left - rpx, top: p.top - rpx, width: rpx * 2, height: rpx * 2, borderRadius: rpx, borderWidth: 2, borderColor: stroke, backgroundColor: `${stroke}${c.occupied ? "24" : "14"}` }]}>
+          <FenceRing key={c.id} occupied={!!c.occupied} stroke={stroke}
+            style={[s.abs, { left: p.left - rpx, top: p.top - rpx, width: rpx * 2, height: rpx * 2, borderRadius: rpx, borderWidth: 2, borderColor: stroke, backgroundColor: `${stroke}${c.occupied ? "24" : "14"}` }]}>
             {rpx > 34 ? <Text style={[s.pinTxt, { marginTop: 6 }]}>{c.title}</Text> : null}
-          </View>
+          </FenceRing>
         );
       })}
       {incidents.filter((i) => inView(i.lat, i.lng)).map((i) => (

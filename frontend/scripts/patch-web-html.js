@@ -65,8 +65,34 @@ const shell = `
     </style>
 `;
 if (!h.includes('id="sentinel-shell"')) h = h.replace("</head>", shell + "</head>");
+// Fuentes estáticas: sin este bloque, @font-face depende de que expo-font inyecte las reglas en
+// runtime y apunte a /assets/node_modules/... — rutas que algunos hosts/CDN no sirven y que dejan
+// la app SIN ICONOS (Ionicons) y con tipografía de sistema. Copiamos los .ttf a /fonts/ (ruta
+// estable y corta) e inyectamos @font-face estático con las mismas familias que registra la app
+// (ver app/_layout.tsx y @react-native-vector-icons/ionicons).
+const fontsDir = path.join(dist, "fonts");
+fs.mkdirSync(fontsDir, { recursive: true });
+const fontSources = [
+  ["Jakarta", path.join(__dirname, "..", "assets", "fonts", "PlusJakartaSans-Regular.ttf")],
+  ["JakartaMedium", path.join(__dirname, "..", "assets", "fonts", "PlusJakartaSans-Medium.ttf")],
+  ["JakartaSemi", path.join(__dirname, "..", "assets", "fonts", "PlusJakartaSans-SemiBold.ttf")],
+  ["JakartaBold", path.join(__dirname, "..", "assets", "fonts", "PlusJakartaSans-Bold.ttf")],
+  ["SpaceMono", path.join(__dirname, "..", "assets", "fonts", "SpaceMono-Regular.ttf")],
+  ["Ionicons", path.join(__dirname, "..", "node_modules", "@react-native-vector-icons", "ionicons", "fonts", "Ionicons.ttf")],
+];
+const faceCss = fontSources
+  .map(([family, src]) => {
+    const out = `${family}.ttf`;
+    fs.copyFileSync(src, path.join(fontsDir, out));
+    // Ionicons: block (nunca glifos de texto como fallback). Texto: swap (nunca texto invisible).
+    const display = family === "Ionicons" ? "block" : "swap";
+    return `@font-face { font-family: "${family}"; src: url("/fonts/${out}") format("truetype"); font-weight: normal; font-style: normal; font-display: ${display}; }`;
+  })
+  .join("\n        ");
+const faceTag = `    <style id="sentinel-fonts">\n        ${faceCss}\n    </style>\n`;
+if (!h.includes('id="sentinel-fonts"')) h = h.replace("</head>", faceTag + "</head>");
 fs.writeFileSync(file, h);
-console.log("patched", file);
+console.log("patched", file, "+ fuentes", fontsDir);
 
 // SPA fallback: static hosts that honor a project 404.html (GitHub Pages / Netlify / kimi.page-style)
 // will serve the app shell for unknown subroutes instead of a hard 404; expo-router then routes client-side.

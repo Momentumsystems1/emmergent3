@@ -18,6 +18,7 @@ import { api } from "@/src/api";
 import { fetchPermissionsRecord } from "@/src/permissions";
 import { useAuth } from "@/src/auth";
 import { Incident, INCIDENT_TYPE, incidentIcon, LatLng, MapCanvas, MapPerson } from "@/src/components/MapCanvas";
+import { BottomNav } from "@/src/components/BottomNav";
 import { GroupsRail } from "@/src/components/GroupsRail";
 import { MainMenu } from "@/src/components/MainMenu";
 import { MemberRail } from "@/src/components/MemberRail";
@@ -25,7 +26,6 @@ import { MemberToolsSheet } from "@/src/components/MemberToolsSheet";
 import { SharingPanel } from "@/src/components/SharingFab";
 import { UserCard } from "@/src/components/UserCard";
 import { UserPhoto } from "@/src/components/UserPhoto";
-import { LinearGradient } from "expo-linear-gradient";
 import { Button, Glass, T, toast } from "@/src/components/ui";
 import { useLocationSharing } from "@/src/hooks/useLocationSharing";
 import { fonts, makeStyles, radius, spacing, useTheme } from "@/src/theme";
@@ -164,7 +164,6 @@ export default function MapHome() {
             </View>
           </Pressable>
           <Pressable testID="search-bar-input" onPress={() => { closeAll(); router.push({ pathname: "/navigate", params: originParams }); }} style={s.barIcon} accessibilityLabel="¿A dónde vamos?"><Ionicons name="search" size={19} color={colors.onSurface} /></Pressable>
-          <Pressable testID="menu-button" onPress={() => { closeAll(); setMainMenu(true); }} style={s.barIcon} accessibilityLabel="Menú"><Ionicons name="menu" size={21} color={colors.onSurface} /></Pressable>
         </View>
         {locBanner && sharesLocation && loc.perm !== "granted" ? (
           <Animated.View entering={FadeInDown} exiting={FadeOut} style={{ marginTop: spacing.sm + 56 }}>
@@ -217,7 +216,7 @@ export default function MapHome() {
       <MemberRail members={otherMembers} top={insets.top + 140} bottom={insets.bottom + 92} onPress={(m) => { closeAll(); setMemberSel(m); }} />
 
       {/* Bottom-left map controls: privacy, traffic, recenter (small, out of the way) */}
-      <View style={[s.leftFabs, { bottom: insets.bottom + spacing.lg }]} pointerEvents="box-none">
+      <View style={[s.leftFabs, { bottom: insets.bottom + 108 }]} pointerEvents="box-none">
         <Pressable testID="fab-privacy" onPress={() => { const next = !sharing; closeAll(); setSharing(next); }} style={[s.smallFab, { backgroundColor: colors.violetSoft, borderColor: "transparent" }]} accessibilityLabel="Privacidad: qué comparto y con quién">
           <Ionicons name="lock-closed" size={18} color={colors.onVioletSoft} />
         </Pressable>
@@ -228,18 +227,14 @@ export default function MapHome() {
         <Pressable testID="fab-recenter" onPress={recenter} style={s.smallFab} accessibilityLabel="Centrar en mi ubicación"><Ionicons name="locate" size={18} color={mePos ? colors.brandPrimary : colors.muted} /></Pressable>
       </View>
 
-      {/* Bottom-center SOS button */}
-      <View style={[s.sosWrap, { bottom: insets.bottom + spacing.lg }]} pointerEvents="box-none">
-        <Pressable testID="fab-sos" onPress={() => { const next = !sosOpen; closeAll(); setSosOpen(next); }} accessibilityLabel="SOS">
-          <LinearGradient colors={[colors.sosStart, colors.sosEnd]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={s.sosBtn}><T weight="bold" style={{ fontSize: 16, color: colors.onSos, letterSpacing: 1 }}>SOS</T></LinearGradient>
-        </Pressable>
-      </View>
+      {/* Navegación inferior: Cercas · Convoy · SOS (elevado) · Sensores · Menú */}
+      <BottomNav sosActive={sosOpen} onMenu={() => { closeAll(); setMainMenu(true); }} onSos={() => { const next = !sosOpen; closeAll(); setSosOpen(next); }} />
 
-      {sharing ? <SharingPanel onClose={() => setSharing(false)} bottom={insets.bottom + spacing.lg} /> : null}
+      {sharing ? <SharingPanel onClose={() => setSharing(false)} bottom={insets.bottom + 108} /> : null}
 
       {/* Traffic incidents (Azure) */}
       {trafficPanel && !incSel ? (
-        <Animated.View entering={FadeInDown.duration(180)} exiting={FadeOut.duration(120)} style={[s.selCard, { bottom: insets.bottom + spacing.lg + 84, maxHeight: 300 }]} testID="traffic-panel">
+        <Animated.View entering={FadeInDown.duration(180)} exiting={FadeOut.duration(120)} style={[s.selCard, { bottom: insets.bottom + 116, maxHeight: 300 }]} testID="traffic-panel">
           <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
             <Ionicons name="car" size={18} color={colors.brandPrimary} />
             <T weight="bold" style={{ fontSize: 14, flex: 1 }}>{incidents.isLoading ? "Buscando incidencias…" : incidents.isError ? "Incidencias no disponibles" : `${incidents.data?.length ?? 0} incidencias en la zona`}</T>
@@ -258,7 +253,7 @@ export default function MapHome() {
         </Animated.View>
       ) : null}
       {incSel ? (
-        <Animated.View entering={FadeInDown.duration(180)} exiting={FadeOut.duration(120)} style={[s.selCard, { bottom: insets.bottom + spacing.lg + 84 }]} testID="incident-card">
+        <Animated.View entering={FadeInDown.duration(180)} exiting={FadeOut.duration(120)} style={[s.selCard, { bottom: insets.bottom + 116 }]} testID="incident-card">
           <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
             <Ionicons name={incidentIcon(incSel) as any} size={20} color={incSel.road_closed ? colors.error : colors.warning} />
             <View style={{ flex: 1 }}>
@@ -272,7 +267,7 @@ export default function MapHome() {
 
       {/* Selected point (compact, never covers the map) */}
       {sel ? (
-        <Animated.View entering={FadeInDown.duration(180)} exiting={FadeOut.duration(120)} style={[s.selCard, { bottom: insets.bottom + spacing.lg + 84 }]} testID="selected-point-card">
+        <Animated.View entering={FadeInDown.duration(180)} exiting={FadeOut.duration(120)} style={[s.selCard, { bottom: insets.bottom + 116 }]} testID="selected-point-card">
           <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
             <Ionicons name="location" size={18} color={colors.brandPrimary} />
             <View style={{ flex: 1 }}>
@@ -292,7 +287,7 @@ export default function MapHome() {
       ) : null}
 
       {sosOpen ? (
-        <Animated.View entering={FadeInDown.duration(160)} exiting={FadeOut.duration(120)} style={[s.selCard, { bottom: insets.bottom + spacing.lg + 84, borderColor: colors.error }]} testID="sos-panel">
+        <Animated.View entering={FadeInDown.duration(160)} exiting={FadeOut.duration(120)} style={[s.selCard, { bottom: insets.bottom + 116, borderColor: colors.error }]} testID="sos-panel">
           <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
             <Ionicons name="alert-circle" size={22} color={colors.error} />
             <View style={{ flex: 1 }}><T weight="bold" style={{ fontSize: 14 }}>Enviar SOS a {groups.data?.length === 1 ? groups.data[0].name : `tus ${groups.data?.length ?? 0} grupos`}</T><T style={{ fontSize: 11, color: colors.muted }}>Aviso de emergencia con prioridad{mePos ? " y tu posición actual" : ""}. Se registra como evidencia.</T></View>
@@ -307,7 +302,7 @@ export default function MapHome() {
       <MemberToolsSheet member={memberSel} mePos={mePos} groupId={group?.id} onClose={() => setMemberSel(null)} onFocus={(m) => setFocus({ lat: m.lat!, lng: m.lng!, key: (focus?.key ?? 0) + 1 })} />
 
       {!group && groups.isSuccess && !sel ? (
-        <View style={[s.hint, { bottom: insets.bottom + spacing.lg + 84 }]} pointerEvents="box-none">
+        <View style={[s.hint, { bottom: insets.bottom + 116 }]} pointerEvents="box-none">
           <Pressable testID="create-group-cta" onPress={() => router.push("/onboarding/group")} style={s.hintBtn}><Ionicons name="add-circle" size={18} color={colors.onBrandPrimary} /><T weight="semibold" style={{ fontSize: 13, color: colors.onBrandPrimary }}>Crea tu grupo</T></Pressable>
         </View>
       ) : null}

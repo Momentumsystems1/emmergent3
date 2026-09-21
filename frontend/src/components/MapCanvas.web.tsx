@@ -21,6 +21,9 @@ const uny = (y: number, z: number) => { const n = Math.PI - (2 * Math.PI * y) / 
 const hex = (c?: string) => (c && /^#[0-9a-fA-F]{6}$/.test(c) ? c.slice(1) : "E11D48");
 
 const GKEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_KEY ?? "";
+// Optional vector Map ID (cloud console). With it: tilt/3D on roadmap + AdvancedMarkerElement. Without: raster roadmap (no tilt).
+const GMAPID = process.env.EXPO_PUBLIC_GOOGLE_MAP_ID ?? "";
+const FOLLOW_ZOOM = 17.5; // close follow on a person (native uses pitch3d=50 + tight zoom; mirror it on web)
 
 // ---------- Google Maps boot (no dependency: script injection + importLibrary) ----------
 declare global { interface Window { google?: any; __mcGmapsPromise?: Promise<any> } }
@@ -103,13 +106,16 @@ function GoogleMapCanvas(props: MapCanvasProps) {
       const c = center ?? fallback;
       const map = new maps.Map(hostRef.current, {
         center: { lat: c.lat, lng: c.lng },
-        zoom: center ? Math.min(19, zoomFor(zoomDelta) + 1) : 12,
+        zoom: center ? FOLLOW_ZOOM : 12,
+        mapId: GMAPID || undefined,
         disableDefaultUI: true,
         gestureHandling: "greedy",
         clickableIcons: false,
-        styles: scheme === "dark" ? DARK_STYLE : undefined,
+        // mapId switches styling to cloud-based; only pass inline styles without it
+        styles: !GMAPID && scheme === "dark" ? DARK_STYLE : undefined,
         backgroundColor: colors.mapTint,
       });
+      if (center) map.setTilt(45); // 3D — efectivo en vector (mapId) o satélite; ignorado en raster clásico
       map.addListener("click", (e: any) => onMapPress?.({ lat: e.latLng.lat(), lng: e.latLng.lng() }));
       map.addListener("dragstart", () => onUserPan?.());
       // long-press emulation (web has no native long-press)
@@ -125,12 +131,13 @@ function GoogleMapCanvas(props: MapCanvasProps) {
   }, []);
 
   // style follow (theme switch without rebuild)
-  useEffect(() => { if (ready && mapRef.current) mapRef.current.setOptions({ styles: scheme === "dark" ? DARK_STYLE : undefined }); }, [ready, scheme]);
-  // camera follow
+  useEffect(() => { if (ready && mapRef.current && !GMAPID) mapRef.current.setOptions({ styles: scheme === "dark" ? DARK_STYLE : undefined }); }, [ready, scheme]);
+  // camera follow: close 3D zoom on the followed target
   useEffect(() => {
     if (!ready || !center || !mapRef.current) return;
     mapRef.current.panTo({ lat: center.lat, lng: center.lng });
-    mapRef.current.setZoom(Math.min(19, zoomFor(zoomDelta) + 1));
+    mapRef.current.setZoom(FOLLOW_ZOOM);
+    mapRef.current.setTilt(45);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, center?.lat, center?.lng, center?.key]);
   // traffic layer

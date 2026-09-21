@@ -15,7 +15,7 @@ import { AddMemberSheet, MemberInfo, MemberSheet, NewInvite } from "@/src/compon
 import { Button, Pill, showUnavailable, T, toast } from "@/src/components/ui";
 import { fonts, makeStyles, radius, spacing, useTheme } from "@/src/theme";
 
-type Group = { id: string; name: string; owner_id: string; my_role: string; members: MemberInfo[]; stats: { members: number; pending: number } };
+type Group = { id: string; name: string; owner_id: string; my_role: string; members: MemberInfo[]; stats: { members: number; pending: number; reserved?: number } };
 
 const confirm = (title: string, msg: string, onOk: () => void) => {
   if (Platform.OS === "web") { if (window.confirm(`${title}\n${msg}`)) onOk(); return; }
@@ -25,11 +25,9 @@ const confirm = (title: string, msg: string, onOk: () => void) => {
 export default function GroupOnboarding({ embedded }: { embedded?: boolean }) {
   const router = useRouter(); const qc = useQueryClient(); const { user, reload } = useAuth();
   const s = useStyles(); const { colors } = useTheme(); const insets = useSafeAreaInsets(); const { width } = useWindowDimensions();
-  const [newName, setNewName] = useState("");
   const [adding, setAdding] = useState<Group | null>(null);
   const [selected, setSelected] = useState<{ gid: string; mid: string } | null>(null);
   const [finishing, setFinishing] = useState(false);
-  const [formingId, setFormingId] = useState<string | null>(null);
   const [newMemberIds, setNewMemberIds] = useState<Record<string, string>>({});
   const seenRef = useRef<Record<string, Set<string>>>({});
 
@@ -49,7 +47,6 @@ export default function GroupOnboarding({ embedded }: { embedded?: boolean }) {
     });
   }, [groups.data]);
   const onErr = (e: any) => { const u = unavailableOf(e); if (u) showUnavailable(u); else toast(e.message, "error"); };
-  const create = useMutation({ mutationFn: (name: string) => api<Group>("/groups", { method: "POST", json: { name } }), onSuccess: (g) => { setNewName(""); qc.invalidateQueries({ queryKey: ["groups"] }); setFormingId(g.id); setTimeout(() => setFormingId(null), 1400); }, onError: onErr });
   const rename = useMutation({ mutationFn: ({ id, name }: { id: string; name: string }) => api(`/groups/${id}`, { method: "PATCH", json: { name } }), onSuccess: () => qc.invalidateQueries({ queryKey: ["groups"] }), onError: onErr });
   const remove = useMutation({ mutationFn: (id: string) => api(`/groups/${id}`, { method: "DELETE" }), onSuccess: () => { toast("Grupo borrado", "success"); qc.invalidateQueries({ queryKey: ["groups"] }); }, onError: onErr });
   const invite = useMutation({ mutationFn: ({ g, v }: { g: Group; v: NewInvite }) => api(`/groups/${g.id}/invitations`, { method: "POST", json: v }), onSuccess: () => { setAdding(null); qc.invalidateQueries({ queryKey: ["groups"] }); }, onError: (e) => { setAdding(null); onErr(e); } });
@@ -74,14 +71,14 @@ export default function GroupOnboarding({ embedded }: { embedded?: boolean }) {
       <ScrollView contentContainerStyle={{ paddingTop: embedded ? spacing.md : insets.top + spacing.lg, paddingHorizontal: spacing.xl, paddingBottom: 160, gap: spacing.lg }} keyboardShouldPersistTaps="handled">
         {!embedded ? (<View><T weight="bold" style={{ fontSize: 28 }}>Tus grupos</T><T style={{ color: colors.muted, marginTop: 4 }}>Crea uno o varios círculos (familia, amigos, equipo). Cada grupo tiene sus propios miembros y permisos.</T></View>) : null}
 
-        {list.map((g) => <GroupCard key={g.id} g={g} me={user?.id} width={width} phase={formingId === g.id ? "forming" : "editing"} newMemberIds={newMemberIds} onRename={(name) => rename.mutate({ id: g.id, name })} onDelete={() => confirm("Borrar grupo", `Se eliminará "${g.name}" y sus invitaciones.`, () => remove.mutate(g.id))}
+        {list.map((g) => <GroupCard key={g.id} g={g} me={user?.id} width={width} newMemberIds={newMemberIds} onRename={(name) => rename.mutate({ id: g.id, name })} onDelete={() => confirm("Borrar grupo", `Se eliminará "${g.name}" y sus invitaciones.`, () => remove.mutate(g.id))}
           onAdd={() => setAdding(g)} onMember={(m) => setSelected({ gid: g.id, mid: m.id })} onChanged={() => qc.invalidateQueries({ queryKey: ["groups"] })} />)}
 
         <View style={s.newCard} testID="new-group-card">
           <T weight="bold">{list.length ? "Crear otro grupo" : "Crea tu primer grupo"}</T>
-          <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: spacing.sm }}>
-            <TextInput testID="new-group-name" style={s.input} placeholder={list.length ? "Nombre del grupo (p. ej. Amigos)" : "Nombre del grupo (p. ej. Familia)"} placeholderTextColor={colors.muted} value={newName} onChangeText={setNewName} returnKeyType="done" onSubmitEditing={() => newName.trim() && create.mutate(newName.trim())} />
-            <Pressable testID="new-group-create" onPress={() => create.mutate(newName.trim() || `Grupo ${list.length + 1}`)} disabled={create.isPending} style={s.addBtn}><Ionicons name="add" size={22} color={colors.onBrandPrimary} /></Pressable>
+          <T style={{ color: colors.muted, fontSize: 12, marginTop: 4 }}>Le pones nombre, reservas las plazas y la órbita se monta sola.</T>
+          <View style={{ marginTop: spacing.sm }}>
+            <Button testID="new-group-create" title="Crear círculo" icon="add-circle" onPress={() => router.push("/group/create")} />
           </View>
         </View>
       </ScrollView>
@@ -102,7 +99,7 @@ export default function GroupOnboarding({ embedded }: { embedded?: boolean }) {
   );
 }
 
-function GroupCard({ g, me, width, phase, newMemberIds, onRename, onDelete, onAdd, onMember, onChanged }: { g: Group; me?: string; width: number; phase: "editing" | "forming"; newMemberIds: Record<string, string>; onRename: (n: string) => void; onDelete: () => void; onAdd: () => void; onMember: (m: MemberInfo) => void; onChanged: () => void }) {
+function GroupCard({ g, me, width, newMemberIds, onRename, onDelete, onAdd, onMember, onChanged }: { g: Group; me?: string; width: number; newMemberIds: Record<string, string>; onRename: (n: string) => void; onDelete: () => void; onAdd: () => void; onMember: (m: MemberInfo) => void; onChanged: () => void }) {
   const s = useStyles(); const { colors } = useTheme();
   const [open, setOpen] = useState(true);
   const [renaming, setRenaming] = useState(false);
@@ -138,7 +135,7 @@ function GroupCard({ g, me, width, phase, newMemberIds, onRename, onDelete, onAd
       {open ? (
         <View style={{ marginTop: spacing.md, gap: spacing.sm }}>
           <View style={{ alignItems: "center", paddingVertical: spacing.sm }} testID={`group-orbit-${g.id}`}>
-            <OrbitalField size={orbSize} phase={phase} groupName={g.name} members={orbMembers}
+            <OrbitalField size={orbSize} phase="editing" groupName={g.name} members={orbMembers} slots={g.stats.reserved ?? 0}
               onMemberPress={(m) => { const full = visible.find((x) => x.id === m.id); if (full && full.user_id !== me) onMember(full); }} />
           </View>
           {canManage ? (

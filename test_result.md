@@ -190,3 +190,16 @@ frontend:
   - app/map.tsx: botón chatbubbles en cabecera (testID messages-button) con badge de no leídos (/messages/unread) → abre chat del grupo.
   - MemberToolsSheet.tsx: acción "Mensaje" (member-tool-message) → chat con destinatario preseleccionado. MainMenu.tsx: item "Mensajes" (menu-messages).
 Credenciales: ana.demo@sentinelfamily.app / Sentinel2026! (grupo "Grupo 1"). Nota: para probar envío de mensajes hace falta un grupo con ≥2 miembros ACTIVOS.
+
+## Iteration 18 (2026-06) — Nacimiento del círculo (animación orbital con plazas reservadas) + invitados por código
+backend (routers/groups.py):
+  - `GroupCreate.planned_size` (plazas reservadas, incluye al admin; se capa por `maxPermanentMembers` del plan). `GroupUpdate` ahora acepta name y/o planned_size (PATCH parcial).
+  - `group_view().stats.reserved` = planned_size - miembros visibles (plazas libres que se dibujan en la órbita).
+  - Invitaciones: enlace construido con `public_base(request)` (host real) + `code` de 6 caracteres; `GET /api/invitations/by-code/{code}`.
+frontend:
+  - src/components/OrbitalField.tsx (REESCRITO): props `slots` (plazas libres, avatar discontinuo con "libre") y fase `assembling`. Coreografía: onda sónica translúcida con borde neón por cada anclaje, giro completo de 360º del campo, cola de puntos a las 12:00 que se vacía, cada plaza entra con muelle a su posición equidistante. Respeta "Reducir movimiento" (useReducedMotion → estado final directo). Timings exportados: QUEUE_LEAD, ANCHOR_STEP, ANCHOR_TRAVEL, anchorAt(i), assembleDuration(n).
+  - app/group/create.tsx (NUEVO): paso 1 nombre + stepper de plazas (2-12) → "Configurar" (crea el grupo con planned_size) → animación con contador central que sube por anclaje (háptica por plaza) → el contador se encoge y deja "nombre + N plazas" con la fecha bajo la órbita → opciones de compartir (enlace + código). "Toca para saltar" corta la animación.
+  - app/onboarding/group.tsx: la tarjeta de nuevo grupo ahora es un botón "Crear círculo" → /group/create (se eliminó el alta rápida y la fase "forming"); las tarjetas pintan `slots={g.stats.reserved}`.
+  - app/group/[id].tsx: la órbita pinta las plazas reservadas.
+  - app/join.tsx (NUEVO): "Me han invitado · tengo un código" (welcome-join-code, account-join-code) → /invite/<token>.
+Credenciales: ana.demo@sentinelfamily.app / Sentinel2026! (plan free: maxGroups=1, ya tiene "Grupo 1" → para crear círculos nuevos hace falta cuenta nueva; el registro por API funciona: POST /api/auth/register).

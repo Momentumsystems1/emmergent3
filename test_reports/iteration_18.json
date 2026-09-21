@@ -1,0 +1,49 @@
+{
+  "summary": "Iteration 18 — Group birth flow (planned_size + reserved + orbital animation). Backend: 8/8 pytest tests pass on /app/backend/tests/test_iteration18_group_creation.py. Verified (a) POST /api/groups {name, planned_size} stores planned_size and returns stats.reserved = planned_size - members (owner counts as 1 → reserved = planned_size - 1); (b) planned_size clamped by plan (free maxPermanentMembers=5 → 9 becomes 5) and negatives clamp to 0; (c) PATCH partial semantics: {name} alone preserves planned_size, {planned_size} alone preserves name, negative planned_size clamps to 0 without wiping name; (d) GET /api/groups and /api/groups/{id} both expose planned_size and stats.reserved; (e) regression — POST /groups/{id}/invite-link idempotent returns {link, code}, GET /invitations/by-code/{CODE} resolves case-insensitively, and a fresh registered user can POST /invitations/by-token/{token}/respond {accept:true} → reserved goes 4 → 3. Frontend (Expo web preview, viewport 390x844): /group/create paso 1 shows testIDs group-create-name and stepper group-size-minus/value/plus with MIN=2 / MAX=12 clamps working. Configurar → animation runs: group-create-counter appears and increments through 0→1→2→3→4 for size 4, then group-create-label ('TEST_it18_UI \\n 4 plazas') appears and group-create-share block reveals a 6-char invite-code-value (e.g. 'Y95TKB','HDJABX','PF8MGN','3N8DLH'). Orbit tap (group-create-orbit) during assembling correctly skips to the ready state. group-create-done navigates to /group/[id] and there the free slots render as orbital-slot-* elements. On /onboarding/group the new-group-card only exposes the new-group-create button (no inline name input) and tapping it opens /group/create. Plan-exhausted path with ana.demo@sentinelfamily.app (free plan, already 1 group) → Configurar → backend 402 → modal 'NO DISPONIBLE EN EL PLAN ACTUAL — Tu plan permite 1 grupo(s).' shown, screen underneath preserved (no crash). Two MINOR issues found: (1) orbital-slot-* testID numbering is offset by the number of active members (with 1 owner + 4 slots the DOM emits orbital-slot-1..orbital-slot-4, not orbital-slot-0..orbital-slot-3 as the spec text implies) — visual/functional behavior is correct, only the numbering differs from the review spec; (2) the fixed 'App en proceso de construcción' toast at the bottom of the viewport overlaps the primary button on ready state (group-create-done) on a 390x844 viewport — same overlay design issue already reported in iteration 17. Web-only warnings (shadow*, pointerEvents deprecations) ignored per main-agent note.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "OrbitalField (free-slot testIDs)",
+        "issue": "Free-slot Pressables emit testID orbital-slot-{items_index} where items_index counts members first, then slots. With 1 active member + 4 free slots the DOM shows orbital-slot-1..orbital-slot-4 (not orbital-slot-0..orbital-slot-3). The review spec asks for orbital-slot-0, orbital-slot-1, ... — recommend using the local slot index instead. Reference: /app/frontend/src/components/OrbitalField.tsx (items map lines 44-47 + OrbitAvatar testID line 158).",
+        "testID": "orbital-slot-*",
+        "priority": "LOW"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "/group/create (ready state) and any screen with bottom-anchored primary button",
+        "issues": [
+          "The persistent 'App en proceso de construcción' toast at the bottom of the viewport visually overlaps the primary CTA on the final state (group-create-done 'Ir al círculo'). Playwright force-click did not trigger navigation until we dismissed the toast / used a direct JS .click(); on device a user has to dismiss the toast first. Same overlay pattern was flagged for welcome-join-code in iteration 17. Consider raising the CTA stack above the toast, adding bottom padding equal to the toast height, or auto-dismissing the toast once the user reaches an actionable state."
+        ]
+      }
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration18_group_creation.py",
+    "/app/test_reports/pytest/it18_results.xml"
+  ],
+  "action_items": [
+    "OPTIONAL (low): change free-slot testID in OrbitalField to use a local slot-index (0..N-1) so a caller can rely on orbital-slot-0 always being the first free slot regardless of member count. Suggested edit inside items.map render (OrbitalField.tsx): pass slotIndex = i - members.length to OrbitAvatar and use `orbital-slot-${slotIndex}` when isSlot.",
+    "OPTIONAL (design): reduce the vertical footprint of the build-notice toast on small viewports or shift it above the fixed action bar so bottom CTAs like group-create-done / welcome-join-code stay tappable without a manual dismissal."
+  ],
+  "critical_code_review_comments": [
+    "backend/routers/groups.py::create_group correctly clamps planned_size with max(0, min(body.planned_size, ent['maxPermanentMembers'])) and returns via group_view whose stats.reserved = max(0, planned_size - len(members)) — matches the spec exactly.",
+    "backend/routers/groups.py::rename_group builds the $set patch only from the provided Optional fields, so PATCH {name} does not touch planned_size and vice versa — partial semantics work as required. Suggestion: consider raising HTTP 200 with `{ok:true}` when patch is empty (currently it still returns the fresh group_view which is fine).",
+    "frontend/app/group/create.tsx correctly awaits the API before starting the animation and uses OrbitalField timings (anchorAt / assembleDuration) to synchronise the central counter — clean design. Only nit: on reduced-motion the shortcut path calls setBusy(false) via the finally block after already setting stage=ready, which is fine but could be moved inside a single guard for clarity."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration18_group_creation.py (new)"
+  ],
+  "success_rate": {"backend": "100% (8/8)", "frontend": "100% functional (2 low-priority polish items)"},
+  "seed_data_creation": "Test suite registers throwaway users (email prefix TEST_it18_...) per test. Also created a handful of TEST_it18_* accounts during manual UI verification. ana.demo and owner@ accounts untouched. No cleanup script needed — data is namespaced by prefix.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "All backend planned_size/reserved semantics and PATCH partial updates verified. Frontend flows (create → animation → skip → done → detail; onboarding entry; plan-exhausted modal) all work. Only two low-priority polish items remain: slot testID numbering offset and the bottom-toast overlapping the CTA on small viewports. Pytest suite: pytest /app/backend/tests/test_iteration18_group_creation.py (needs EXPO_PUBLIC_BACKEND_URL env; run with EXPO_PUBLIC_BACKEND_URL=https://sentinel-audit-6.preview.emergentagent.com).",
+  "rca_of_issue": "N/A — no functional bugs found. Slot-testID numbering: OrbitalField.tsx builds `items = [...members, ...slots]` and renders them with a single items.map(m, i) → the index used by testID is the index within items, so slots inherit index = members.length + local_index. Fix is trivial (pass local slotIndex) but has no runtime side-effect. Toast overlap: known design regression from iteration 17 (build-notice toast is anchored bottom with no bottom-offset for scrollable content)."
+}

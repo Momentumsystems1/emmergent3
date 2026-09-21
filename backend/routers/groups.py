@@ -27,10 +27,12 @@ async def _new_code() -> str:
 
 class GroupCreate(BaseModel):
     name: str = "Grupo 1"
+    planned_size: int = 0  # slots the admin reserves up front (includes themselves); 0 = not declared
 
 
 class GroupUpdate(BaseModel):
-    name: str
+    name: Optional[str] = None
+    planned_size: Optional[int] = None
 
 
 class InviteCreate(BaseModel):
@@ -91,6 +93,7 @@ async def group_view(g: dict, viewer_id: str) -> dict:
             "stats": {"members": sum(1 for m in members if m["status"] == "active"),
                       "connected": sum(1 for m in members if m.get("location_state") == "shared"),
                       "pending": sum(1 for m in members if m["status"] == "pending"),
+                      "reserved": max(0, int(g.get("planned_size") or 0) - len(members)),
                       "alerts": alerts, "meeting": bool(active_meeting), "convoy": bool(active_convoy)},
             "my_role": next((m["role"] for m in members if m.get("user_id") == viewer_id), None)}
 
@@ -115,7 +118,7 @@ async def create_group(body: GroupCreate, user=Depends(current_user)):
     if owned >= ent["maxGroups"]:
         raise Unavailable("plan", f"Tu plan permite {ent['maxGroups']} grupo(s).", "maxGroups")
     g = {"name": body.name.strip() or "Grupo 1", "owner_id": uid, "created_at": now(), "deleted_at": None,
-         "state": "forming"}
+         "state": "forming", "planned_size": max(0, min(body.planned_size, ent["maxPermanentMembers"]))}
     res = await db.groups.insert_one(g)
     gid = str(res.inserted_id)
     prof = user.get("profile") or {}
@@ -137,7 +140,14 @@ async def get_group(group_id: str, user=Depends(current_user)):
 @router.patch("/groups/{group_id}")
 async def rename_group(group_id: str, body: GroupUpdate, user=Depends(current_user)):
     await _group_for(user, group_id, admin=True)
-    await db.groups.update_one({"_id": oid(group_id)}, {"$set": {"name": body.name.strip() or "Grupo 1"}})
+    patch: dict = {}
+    if body.name is not None:
+        patch["name"] = body.name.strip() or "Grupo 1"
+    if body.planned_size is not None:
+        ent = (await user_entitlements(user))["entitlements"]
+        patch["planned_size"] = max(0, min(body.planned_size, ent["maxPermanentMembers"]))
+    if patch:
+        await db.groups.update_one({"_id": oid(group_id)}, {"$set": patch})
     return await group_view(await db.groups.find_one({"_id": oid(group_id)}), str(user["_id"]))
 
 

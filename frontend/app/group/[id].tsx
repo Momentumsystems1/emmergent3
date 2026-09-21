@@ -108,7 +108,7 @@ export default function GroupDetail() {
         {view === "members" && group ? (
           <>
             <View style={{ alignItems: "center", paddingVertical: spacing.lg }}>
-              <OrbitalField size={size} phase="editing" groupName={group.name}
+              <OrbitalField size={size} phase="editing" groupName={group.name} slots={group.stats?.reserved ?? 0}
                 members={group.members.map((m: any) => ({ id: m.id, name: m.display_name, color: m.color, isMe: m.user_id === user?.id, status: m.status === "active" ? "active" : m.status === "declined" ? "declined" : m.status === "expired" ? "expired" : "pending" }))}
                 onMemberPress={(m) => setSelectedId(m.id)} />
             </View>

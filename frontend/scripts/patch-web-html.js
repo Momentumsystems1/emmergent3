@@ -13,10 +13,18 @@ let h = fs.readFileSync(file, "utf8");
 h = h.replace('<html lang="en">', '<html lang="es">');
 h = h.replace(
   '<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />',
-  '<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no, viewport-fit=cover" />\n' +
+  // maximum-scale/user-scalable=no: evita zoom accidental de doble toque; la app se siente nativa.
+  '<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, shrink-to-fit=no, viewport-fit=cover" />\n' +
     '    <meta name="description" content="MY CLUSTER — tu gente localizada y protegida en tiempo real. Ubicación en vivo, alertas y rutas compartidas. Privado y sin anuncios." />\n' +
     '    <meta name="theme-color" content="#D93025" />\n' +
-    '    <meta name="color-scheme" content="light dark" />'
+    '    <meta name="color-scheme" content="light dark" />\n' +
+    // PWA: "Añadir a pantalla de inicio" abre standalone, sin cromo de navegador.
+    '    <link rel="manifest" href="/manifest.json" />\n' +
+    '    <meta name="mobile-web-app-capable" content="yes" />\n' +
+    '    <meta name="apple-mobile-web-app-capable" content="yes" />\n' +
+    '    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />\n' +
+    '    <meta name="apple-mobile-web-app-title" content="MY CLUSTER" />\n' +
+    '    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />'
 );
 
 const shell = `
@@ -35,6 +43,12 @@ const shell = `
       *::-webkit-scrollbar-thumb { background: rgba(136,150,174,0.35); border-radius: 4px; }
       *::-webkit-scrollbar-track { background: transparent; }
       input, textarea { outline: none; }
+      /* Sensación nativa: sin flash gris al tocar, sin rebote de goma, sin zoom de doble toque,
+         sin selección de texto accidental en la UI (los inputs sí seleccionan). */
+      * { -webkit-tap-highlight-color: transparent; }
+      html, body { overscroll-behavior: none; touch-action: manipulation; }
+      body { user-select: none; -webkit-user-select: none; }
+      input, textarea, [contenteditable] { user-select: text; -webkit-user-select: text; }
       [data-testid="welcome-screen"] { width: 100% !important; height: 100% !important; }
       @media (min-width: 560px) {
         body > div {
@@ -58,3 +72,26 @@ console.log("patched", file);
 // will serve the app shell for unknown subroutes instead of a hard 404; expo-router then routes client-side.
 fs.writeFileSync(path.join(dist, "404.html"), h);
 console.log("patched", path.join(dist, "404.html"));
+
+// PWA: manifest + iconos (casco sobre rojo marca). "Añadir a pantalla de inicio" → standalone sin cromo.
+const manifest = {
+  name: "MY CLUSTER",
+  short_name: "MY CLUSTER",
+  description: "Tu gente localizada y protegida en tiempo real. Privado y sin anuncios.",
+  start_url: "/",
+  scope: "/",
+  display: "standalone",
+  orientation: "portrait",
+  background_color: "#FFFFFF",
+  theme_color: "#D93025",
+  icons: [
+    { src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+    { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+  ],
+};
+fs.writeFileSync(path.join(dist, "manifest.json"), JSON.stringify(manifest, null, 2));
+const pwaDir = path.join(__dirname, "..", "assets", "images", "pwa");
+for (const f of ["apple-touch-icon.png", "icon-192.png", "icon-512.png"]) {
+  fs.copyFileSync(path.join(pwaDir, f), path.join(dist, f));
+}
+console.log("patched", path.join(dist, "manifest.json"), "+ iconos PWA");

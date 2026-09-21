@@ -25,6 +25,7 @@ import { MemberRail } from "@/src/components/MemberRail";
 import { MemberToolsSheet } from "@/src/components/MemberToolsSheet";
 import { SharingPanel } from "@/src/components/SharingFab";
 import { SensorHUD } from "@/src/components/SensorHUD";
+import { useTelemetry } from "@/src/hooks/useTelemetry";
 import { UserCard } from "@/src/components/UserCard";
 import { UserPhoto } from "@/src/components/UserPhoto";
 import { Button, Glass, T, toast } from "@/src/components/ui";
@@ -65,6 +66,8 @@ export default function MapHome() {
   const positions = useQuery({ queryKey: ["positions", group?.id], enabled: !!group, refetchInterval: 10000, queryFn: () => api<MapPerson[]>(`/groups/${group.id}/positions`) });
   const sharesLocation = !!perms.data && Object.values(perms.data).some((v: any) => v.effective && (v.key === "exact_location" || v.key === "approx_location"));
   const loc = useLocationSharing(sharesLocation);
+  const telemetry = useTelemetry(true);
+  const [escortOn, setEscortOn] = useState(false);
   const reverse = useQuery({ queryKey: ["reverse", sel?.lat, sel?.lng], enabled: !!sel, retry: false, queryFn: () => api<{ name: string }>(`/mobility/reverse?lat=${sel!.lat}&lng=${sel!.lng}`) });
   const weather = useQuery({ queryKey: ["weather", sel?.lat?.toFixed(3), sel?.lng?.toFixed(3)], enabled: !!sel, retry: false, staleTime: 600000, queryFn: () => api<any>(`/mobility/weather?lat=${sel!.lat}&lng=${sel!.lng}`) });
   const [traffic, setTraffic] = useState(false);
@@ -209,7 +212,7 @@ export default function MapHome() {
 
       {/* Left rail: groups (pulsing red when something needs attention) */}
       <GroupsRail groups={railGroups} top={insets.top + 76} activeId={group?.id} onPress={(g) => { closeAll(); router.push(`/group/${g.id}`); }} />
-      <SensorHUD top={insets.top + 76} />
+      <SensorHUD top={insets.top + 128} data={telemetry} escort={escortOn} />
 
       {/* Top-right user card */}
       <UserCard pos={mePos} tasks={tasks} top={insets.top + 76} sharing={sharesLocation && loc.perm === "granted"} open={userOpen} onOpen={() => { closeAll(); setUserOpen(true); }} onClose={() => setUserOpen(false)} />

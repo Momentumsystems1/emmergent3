@@ -9,7 +9,7 @@ export type Telemetry = {
 };
 
 export const stateFromSpeed = (kmh: number | null): Telemetry["state"] =>
-  kmh == null ? null : kmh >= 14 ? "ruta" : kmh >= 2 ? "movimiento" : "parado";
+  kmh == null ? null : kmh > 10 ? "ruta" : kmh >= 2 ? "movimiento" : "parado";
 
 export function useTelemetry(active: boolean): Telemetry {
   const [battery, setBattery] = useState<number | null>(null);

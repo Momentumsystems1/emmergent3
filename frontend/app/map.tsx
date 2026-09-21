@@ -24,6 +24,7 @@ import { MainMenu } from "@/src/components/MainMenu";
 import { MemberRail } from "@/src/components/MemberRail";
 import { MemberToolsSheet } from "@/src/components/MemberToolsSheet";
 import { SharingPanel } from "@/src/components/SharingFab";
+import { SensorHUD } from "@/src/components/SensorHUD";
 import { UserCard } from "@/src/components/UserCard";
 import { UserPhoto } from "@/src/components/UserPhoto";
 import { Button, Glass, T, toast } from "@/src/components/ui";
@@ -208,6 +209,7 @@ export default function MapHome() {
 
       {/* Left rail: groups (pulsing red when something needs attention) */}
       <GroupsRail groups={railGroups} top={insets.top + 76} activeId={group?.id} onPress={(g) => { closeAll(); router.push(`/group/${g.id}`); }} />
+      <SensorHUD top={insets.top + 76} />
 
       {/* Top-right user card */}
       <UserCard pos={mePos} tasks={tasks} top={insets.top + 76} sharing={sharesLocation && loc.perm === "granted"} open={userOpen} onOpen={() => { closeAll(); setUserOpen(true); }} onClose={() => setUserOpen(false)} />

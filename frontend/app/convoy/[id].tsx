@@ -112,8 +112,9 @@ export default function Convoy() {
 }
 
 function nameOf(uid: string, pos: MapPerson[], myId?: string) {
-  if (uid === myId) return "tú";
-  return pos.find((p) => p.user_id === uid)?.name ?? "miembro";
+  const name = pos.find((p) => p.user_id === uid)?.name;
+  if (name) return name;
+  return uid === myId ? "Tú" : "miembro";
 }
 
 const useStyles = makeStyles((c) => ({

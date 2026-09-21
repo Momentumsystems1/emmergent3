@@ -3,6 +3,7 @@
 import Ionicons from "@react-native-vector-icons/ionicons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { useEffect, useRef } from "react";
 import { ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -55,6 +56,31 @@ export default function Convoy() {
   const isLeader = leaderMember?.user_id === user?.id;
   const inConvoy = mbs.some((m) => m.user_id === user?.id);
   const active = d?.status === "active";
+
+  // Aviso de separación: miembro >1 km del líder de forma sostenida (2 lecturas seguidas,
+  // ~20 s con el poll de 10 s). Se avisa una sola vez por miembro y sesión; si se recupera
+  // y vuelve a rezagarse, vuelve a avisar (se resetea el contador al volver <1 km).
+  const lagCount = useRef<Record<string, number>>({});
+  const lagAlerted = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!active || !leaderPos) return;
+    for (const m of mbs) {
+      if (m.role === "leader") continue;
+      const p = posOf(m.user_id);
+      const gap = p ? distM({ lat: p.lat!, lng: p.lng! }, { lat: leaderPos.lat!, lng: leaderPos.lng! }) : null;
+      if (gap != null && gap > 1000) {
+        const n = (lagCount.current[m.user_id] = (lagCount.current[m.user_id] ?? 0) + 1);
+        if (n >= 2 && !lagAlerted.current.has(m.user_id)) {
+          lagAlerted.current.add(m.user_id);
+          toast(`${nameOf(m.user_id, pos, user?.id)} se está rezagando del convoy (${fmtKm(gap)} del líder)`, "error");
+        }
+      } else if (gap != null) {
+        lagCount.current[m.user_id] = 0;
+        lagAlerted.current.delete(m.user_id);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [positions.data, members.data, active, leaderPos?.lat, leaderPos?.lng]);
 
   return (
     <View style={s.root} testID="convoy-screen">

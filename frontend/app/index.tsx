@@ -5,12 +5,12 @@ import { ActivityIndicator, Image, View } from "react-native";
 
 import { getLocalOnboarding, useAuth } from "@/src/auth";
 import { T } from "@/src/components/ui";
-import { fonts, useTheme } from "@/src/theme";
+import { fonts, ForceLightTheme, useTheme } from "@/src/theme";
 
 const LOCAL_ROUTES: Record<string, string> = { terms: "/welcome", data: "/onboarding/data", transparency: "/onboarding/transparency", security: "/onboarding/security", account: "/onboarding/account" };
 const SERVER_ROUTES: Record<string, string> = { consent: "/onboarding/profile", profile: "/onboarding/profile", group: "/onboarding/group", done: "/map" };
 
-export default function Index() {
+function Bootstrap() {
   const { user, loading } = useAuth();
   const { colors } = useTheme();
   const [target, setTarget] = useState<string | null>(null);
@@ -34,5 +34,13 @@ export default function Index() {
       <T weight="bold" style={{ color: colors.onSurface, fontSize: 16, letterSpacing: 3 }}>MY CLUSTER</T>
       <ActivityIndicator color={colors.brandPrimary} />
     </View>
+  );
+}
+
+export default function Index() {
+  return (
+    <ForceLightTheme.Provider value>
+      <Bootstrap />
+    </ForceLightTheme.Provider>
   );
 }

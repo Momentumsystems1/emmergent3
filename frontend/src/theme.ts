@@ -1,7 +1,7 @@
 // Design tokens for MY CLUSTER — sistema "Google-like": blanco/gris/negro con acento rojo.
 // Light ("Día") and dark ("Noche") themes. All components must consume tokens, never hardcode colors.
 // Keys are backward-compatible with v1/v2; v3 cambia la paleta a blanco/gris/negro + rojo #EA4335.
-import { useMemo } from "react";
+import { createContext, useContext, useMemo } from "react";
 import { Appearance, StyleSheet, useColorScheme } from "react-native";
 
 export type ColorScheme = "light" | "dark";
@@ -164,11 +164,16 @@ export function setColorScheme(scheme: ColorScheme | null) {
 }
 setColorScheme?.(themes.dark ? null : defaultScheme);
 
+// Brand funnel override: wrap welcome/onboarding in <ForceLightTheme.Provider value> to keep them white on dark-mode devices.
+export const ForceLightTheme = createContext(false);
+
 export function useTheme(): { scheme: ColorScheme; colors: ThemeColors } {
   const system = useColorScheme();
-  const scheme: ColorScheme = (system === "dark" || system === "light") && themes[system] ? system : defaultScheme;
+  const forceLight = useContext(ForceLightTheme);
+  const scheme: ColorScheme = forceLight ? "light" : (system === "dark" || system === "light") && themes[system] ? system : defaultScheme;
   return { scheme, colors: themes[scheme] ?? themes.light };
 }
+
 
 export function makeStyles<T extends StyleSheet.NamedStyles<T> | StyleSheet.NamedStyles<any>>(
   factory: (colors: ThemeColors) => T & StyleSheet.NamedStyles<any>,

@@ -4,9 +4,9 @@ import { Image, ImageBackground, Pressable, View, useWindowDimensions } from "re
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { T } from "@/src/components/ui";
-import { fonts, makeStyles, radius, shadow, spacing, useTheme } from "@/src/theme";
+import { fonts, ForceLightTheme, makeStyles, radius, shadow, spacing, useTheme } from "@/src/theme";
 
-export default function Welcome() {
+function WelcomeScreen() {
   const router = useRouter(); const insets = useSafeAreaInsets(); const s = useStyles(); const { colors } = useTheme();
   const { height: winH } = useWindowDimensions();
   const topH = Math.round(winH * 0.56);
@@ -58,3 +58,11 @@ const useStyles = makeStyles((c) => ({
   ghost: { height: 56, borderRadius: radius.pill, borderWidth: 1.5, borderColor: c.border, backgroundColor: c.surface, alignItems: "center", justifyContent: "center" },
   micro: { textAlign: "center", fontSize: 10.5, letterSpacing: 1.6, color: "#9AA0A6", marginTop: spacing.xs },
 }));
+
+export default function Welcome() {
+  return (
+    <ForceLightTheme.Provider value>
+      <WelcomeScreen />
+    </ForceLightTheme.Provider>
+  );
+}

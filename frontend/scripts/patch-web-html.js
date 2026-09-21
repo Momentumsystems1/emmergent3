@@ -53,3 +53,8 @@ const shell = `
 if (!h.includes('id="sentinel-shell"')) h = h.replace("</head>", shell + "</head>");
 fs.writeFileSync(file, h);
 console.log("patched", file);
+
+// SPA fallback: static hosts that honor a project 404.html (GitHub Pages / Netlify / kimi.page-style)
+// will serve the app shell for unknown subroutes instead of a hard 404; expo-router then routes client-side.
+fs.writeFileSync(path.join(dist, "404.html"), h);
+console.log("patched", path.join(dist, "404.html"));

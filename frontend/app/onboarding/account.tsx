@@ -70,7 +70,6 @@ export default function Account() {
             {gLoading ? <ActivityIndicator color={colors.onSurface} /> : <Ionicons name="logo-google" size={18} color={colors.onSurface} />}
             <T weight="semibold" style={{ fontSize: 15 }}>{mode === "register" ? "Continuar con Google" : "Entrar con Google"}</T>
           </Pressable>
-          <T style={{ color: colors.muted, fontSize: 11, textAlign: "center" }}>Microsoft y Supabase: SERVICIO NO CONFIGURADO (pendiente de credenciales)</T>
         </View>
       </OnboardingScreen>
     </KeyboardAvoidingView>

@@ -16,6 +16,7 @@ import { MapCanvas, MapPerson } from "@/src/components/MapCanvas";
 import { Button, Header, Pill, showUnavailable, T, toast } from "@/src/components/ui";
 import { useLocationSharing } from "@/src/hooks/useLocationSharing";
 import { fonts, makeStyles, radius, spacing, useTheme } from "@/src/theme";
+import { fetchGroups } from "@/src/groups";
 
 type Place = { name: string; lat: number; lng: number; has_number?: boolean; street?: string; distance_m?: number };
 type Stop = Place & { label: string };
@@ -49,7 +50,7 @@ export default function Navigate() {
 
   const history = useQuery({ queryKey: ["nav-history", origin?.lat], queryFn: () => api<Place[]>(`/mobility/history${origin ? `?lat=${origin.lat}&lng=${origin.lng}` : ""}`) });
   const suggest = useQuery({ queryKey: ["autocomplete", typed, origin?.lat], enabled: typed.length > 1, queryFn: () => api<Place[]>(`/mobility/autocomplete?q=${encodeURIComponent(typed)}${origin ? `&lat=${origin.lat}&lng=${origin.lng}` : ""}`) });
-  const groups = useQuery({ queryKey: ["groups"], queryFn: () => api<any[]>("/groups") });
+  const groups = useQuery({ queryKey: ["groups"], queryFn: fetchGroups });
   const gid = groups.data?.[0]?.id;
   const positions = useQuery({ queryKey: ["positions", gid], enabled: !!gid, queryFn: () => api<MapPerson[]>(`/groups/${gid}/positions`) });
 

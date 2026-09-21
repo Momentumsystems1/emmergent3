@@ -20,6 +20,7 @@ import { Incident, INCIDENT_TYPE, incidentIcon, LatLng, MapCanvas, MapPerson } f
 import { SharingFab, SharingPanel } from "@/src/components/SharingFab";
 import { Button, showUnavailable, T, toast } from "@/src/components/ui";
 import { fonts, makeStyles, radius, spacing, useTheme } from "@/src/theme";
+import { fetchGroups } from "@/src/groups";
 
 type Place = { name: string; lat: number; lng: number };
 type Overlay = null | "stop" | "group" | "poi" | "sharing" | "traffic";
@@ -84,8 +85,8 @@ export default function Drive() {
   /* eslint-enable react-hooks/set-state-in-effect */
 
   // ---- group / trip ----
-  const groups = useQuery({ queryKey: ["groups"], queryFn: () => api<any[]>("/groups") });
-  const group = groups.data?.[0];
+  const groups = useQuery({ queryKey: ["groups"], queryFn: fetchGroups });
+  const group: any = groups.data?.[0];
   const trip = useQuery({ queryKey: ["trip", tripId], enabled: !!tripId, refetchInterval: 10000, queryFn: () => api<any>(`/trips/${tripId}`) });
   const positions = useQuery({ queryKey: ["positions", group?.id], enabled: !!group && !!tripId, refetchInterval: 10000, queryFn: () => api<MapPerson[]>(`/groups/${group.id}/positions`) });
   const invite = useMutation({

@@ -14,6 +14,7 @@ import { OrbitalField } from "@/src/components/OrbitalField";
 import { AddMemberSheet, MemberInfo, MemberSheet, NewInvite } from "@/src/components/sheets";
 import { Button, Pill, showUnavailable, T, toast } from "@/src/components/ui";
 import { fonts, makeStyles, radius, spacing, useTheme } from "@/src/theme";
+import { fetchGroups } from "@/src/groups";
 
 type Group = { id: string; name: string; owner_id: string; my_role: string; members: MemberInfo[]; stats: { members: number; pending: number } };
 
@@ -33,7 +34,7 @@ export default function GroupOnboarding({ embedded }: { embedded?: boolean }) {
   const [newMemberIds, setNewMemberIds] = useState<Record<string, string>>({});
   const seenRef = useRef<Record<string, Set<string>>>({});
 
-  const groups = useQuery({ queryKey: ["groups"], queryFn: () => api<Group[]>("/groups") });
+  const groups = useQuery({ queryKey: ["groups"], queryFn: fetchGroups });
   // Detects newly-added members (per group) to trigger the orbital "birth" animation, without flagging the initial load.
   useEffect(() => {
     (groups.data ?? []).forEach((g) => {

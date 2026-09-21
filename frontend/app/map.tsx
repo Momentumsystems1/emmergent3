@@ -30,6 +30,7 @@ import { UserCard } from "@/src/components/UserCard";
 import { UserPhoto } from "@/src/components/UserPhoto";
 import { Button, Glass, T, toast } from "@/src/components/ui";
 import { useLocationSharing } from "@/src/hooks/useLocationSharing";
+import { useEscort } from "@/src/hooks/useEscort";
 import { fonts, makeStyles, radius, spacing, useTheme } from "@/src/theme";
 import { storage } from "@/src/utils/storage";
 import { fetchGroups } from "@/src/groups";
@@ -67,7 +68,8 @@ export default function MapHome() {
   const sharesLocation = !!perms.data && Object.values(perms.data).some((v: any) => v.effective && (v.key === "exact_location" || v.key === "approx_location"));
   const loc = useLocationSharing(sharesLocation);
   const telemetry = useTelemetry(true);
-  const [escortOn, setEscortOn] = useState(false);
+  const escort = useEscort();
+  const escortOn = escort.active;
   const reverse = useQuery({ queryKey: ["reverse", sel?.lat, sel?.lng], enabled: !!sel, retry: false, queryFn: () => api<{ name: string }>(`/mobility/reverse?lat=${sel!.lat}&lng=${sel!.lng}`) });
   const weather = useQuery({ queryKey: ["weather", sel?.lat?.toFixed(3), sel?.lng?.toFixed(3)], enabled: !!sel, retry: false, staleTime: 600000, queryFn: () => api<any>(`/mobility/weather?lat=${sel!.lat}&lng=${sel!.lng}`) });
   const [traffic, setTraffic] = useState(false);
@@ -148,6 +150,34 @@ export default function MapHome() {
       await Promise.all(list.map((g: any) => api("/events", { method: "POST", json: { group_id: g.id, kind: "emergency", severity: "critical", message: "SOS: necesito ayuda", ...(mePos ? { lat: mePos.lat, lng: mePos.lng } : {}) } })));
       toast(`SOS enviado a ${list.length === 1 ? list[0].name : `${list.length} grupos`}`, "success"); setSosOpen(false);
     } catch (e: any) { toast(e.message, "error"); }
+  };
+
+  // Modo Escolta: caída detectada (pico >3 g + inmovilidad) → 20 s para responder; si no, aviso al grupo
+  const [fallLeft, setFallLeft] = useState(0);
+  const sendFallAlert = async () => {
+    escort.clearFall(); setFallLeft(0);
+    const list = groups.data ?? [];
+    if (!list.length) return;
+    try {
+      await Promise.all(list.map((g: any) => api("/events", { method: "POST", json: { group_id: g.id, kind: "emergency", severity: "critical", message: "Posible caída detectada (Modo Escolta): sin respuesta tras 20 s", ...(mePos ? { lat: mePos.lat, lng: mePos.lng } : {}) } })));
+      toast(`Aviso de caída enviado a ${list.length === 1 ? list[0].name : "tus grupos"}`, "success");
+    } catch (e: any) { toast(e.message, "error"); }
+  };
+  useEffect(() => {
+    if (!escort.fallAlert) return;
+    setFallLeft(20);
+    const t = setInterval(() => setFallLeft((v) => v - 1), 1000);
+    return () => clearInterval(t);
+  }, [escort.fallAlert]);
+  useEffect(() => {
+    if (escort.fallAlert && fallLeft === 0) sendFallAlert();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fallLeft]);
+  const toggleEscort = async () => {
+    if (escort.active) { escort.disable(); toast("Modo Escolta desactivado"); return; }
+    closeAll();
+    await escort.enable();
+    toast("Trayecto Protegido activo", "success");
   };
 
   return (
@@ -231,6 +261,30 @@ export default function MapHome() {
         </Pressable>
         <Pressable testID="fab-recenter" onPress={recenter} style={s.smallFab} accessibilityLabel="Centrar en mi ubicación"><Ionicons name="locate" size={18} color={mePos ? colors.brandPrimary : colors.muted} /></Pressable>
       </View>
+
+      {/* Modo Escolta (abajo-derecha, junto al SOS): un toque → trayecto protegido + detector de caída */}
+      <View style={[s.rightFabs, { bottom: insets.bottom + 108 }]} pointerEvents="box-none">
+        <Pressable testID="fab-escort" onPress={toggleEscort}
+          style={[s.smallFab, escortOn && { backgroundColor: colors.error, borderColor: colors.error }]}
+          accessibilityLabel={escortOn ? "Desactivar Modo Escolta" : "Activar Modo Escolta (trayecto protegido)"}>
+          <Ionicons name={escortOn ? "shield-checkmark" : "shield-half-outline"} size={18} color={escortOn ? colors.onError : colors.onSurface} />
+        </Pressable>
+      </View>
+
+      {/* Caída detectada: 20 s para decir que estás bien; si no, aviso crítico al grupo */}
+      {escort.fallAlert ? (
+        <View style={[s.fallCard, { top: insets.top + 180 }]} testID="escort-fall-card">
+          <Glass style={{ padding: spacing.lg, alignItems: "center", gap: spacing.sm }}>
+            <Ionicons name="warning" size={26} color={colors.error} />
+            <T weight="bold" style={{ fontSize: 17, textAlign: "center" }}>¿Estás bien?</T>
+            <T style={{ fontSize: 12.5, color: colors.muted, textAlign: "center" }}>
+              Hemos detectado un posible golpe o caída. Si no respondes en {fallLeft} s, avisamos a tu grupo con tu posición.
+            </T>
+            <Button testID="escort-im-ok" title="Estoy bien" onPress={() => { escort.clearFall(); setFallLeft(0); }} />
+            <Button small variant="ghost" testID="escort-send-now" title="Avisar ahora" onPress={sendFallAlert} />
+          </Glass>
+        </View>
+      ) : null}
 
       {/* Navegación inferior: Cercas · Convoy · SOS (elevado) · Sensores · Menú */}
       <BottomNav sosActive={sosOpen} onMenu={() => { closeAll(); setMainMenu(true); }} onSos={() => { const next = !sosOpen; closeAll(); setSosOpen(next); }} />
@@ -332,6 +386,8 @@ const useStyles = makeStyles((c) => ({
   avatar: { backgroundColor: c.brandPrimary, width: 36, height: 36, borderRadius: 18, marginRight: 2 },
   badge: { position: "absolute", top: -2, right: -2, minWidth: 16, height: 16, borderRadius: 8, backgroundColor: c.pending, alignItems: "center", justifyContent: "center", paddingHorizontal: 3 },
   leftFabs: { position: "absolute", left: spacing.md, alignItems: "flex-start", gap: spacing.sm },
+  rightFabs: { position: "absolute", right: spacing.md, alignItems: "flex-end", gap: spacing.sm },
+  fallCard: { position: "absolute", left: spacing.lg, right: spacing.lg, zIndex: 30 },
   smallFab: { width: 46, height: 46, borderRadius: 23, backgroundColor: c.glassStrong, borderWidth: 1, borderColor: c.hairline, alignItems: "center", justifyContent: "center", shadowColor: c.surfaceInverse, shadowOpacity: 0.16, shadowRadius: 12, shadowOffset: { width: 0, height: 5 }, elevation: 4 },
   fabOn: { backgroundColor: c.brandSoft, borderColor: c.brandPrimary },
   fabBadge: { position: "absolute", top: -2, right: -2, minWidth: 16, height: 16, borderRadius: 8, backgroundColor: c.warning, alignItems: "center", justifyContent: "center", paddingHorizontal: 3 },

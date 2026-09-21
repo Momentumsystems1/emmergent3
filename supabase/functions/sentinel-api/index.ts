@@ -1,0 +1,1466 @@
+// sentinel-api v7 — backend unificado de Sentinel Family (Supabase Edge Function, Deno)
+// v6 (dev, prueba): auth enriquecido (user con onboarding), refresh, CRUD grupos/miembros,
+// invitaciones completas, eventos, ubicación, quedadas (meetings) con ETA Mapbox,
+// mobility (geocode/autocomplete/history/nav-route/static.png) sobre Mapbox, planes desde tabla.
+const SUPA = Deno.env.get("SUPABASE_URL");
+const ANON = Deno.env.get("SUPABASE_ANON_KEY");
+const MAPBOX = Deno.env.get("MAPBOX_TOKEN");
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+};
+const CATALOG = [
+  {
+    key: "exact_location",
+    label: "Ubicación actual",
+    why: "Avisos de llegada, salida y emergencias"
+  },
+  {
+    key: "approx_location",
+    label: "Zona aproximada",
+    why: "Mostrar el área general sin la posición exacta"
+  },
+  {
+    key: "routes",
+    label: "Rutas e historial",
+    why: "Revisar trayectos y detectar desvíos"
+  },
+  {
+    key: "eta",
+    label: "Hora estimada de llegada",
+    why: "Avisar cuándo llega cada miembro"
+  },
+  {
+    key: "motion_state",
+    label: "Estado de movimiento",
+    why: "Saber si va a pie, en coche o parado"
+  },
+  {
+    key: "mobility_mode",
+    label: "Modo de transporte",
+    why: "Estadísticas y avisos según cómo se desplaza"
+  },
+  {
+    key: "safety_alerts",
+    label: "Alertas de seguridad",
+    why: "Botón SOS y avisos de zonas seguras"
+  },
+  {
+    key: "camera",
+    label: "Cámara",
+    why: "Foto de perfil y evidencias de emergencia"
+  },
+  {
+    key: "microphone",
+    label: "Micrófono",
+    why: "Audio en emergencias activadas por el usuario"
+  },
+  {
+    key: "device_info",
+    label: "Estado del dispositivo",
+    why: "Avisos de batería baja y conectividad"
+  },
+  {
+    key: "v16",
+    label: "Baliza V16",
+    why: "Vincular la baliza del coche a tu seguridad vial"
+  },
+  {
+    key: "metricas",
+    label: "Métricas de uso",
+    why: "Mejorar la app con datos anónimos de uso"
+  }
+];
+function json(body, status = 200, extra = {}) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      ...CORS,
+      "Content-Type": "application/json",
+      ...extra
+    }
+  });
+}
+const err = (code, title, status, reason)=>json({
+    detail: {
+      code,
+      title,
+      ...reason ? {
+        reason
+      } : {}
+    }
+  }, status);
+function jwtPayload(req) {
+  const h = req.headers.get("authorization") ?? "";
+  const m = h.match(/^Bearer (.+)$/);
+  if (!m) return null;
+  try {
+    return JSON.parse(atob(m[1].split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
+  } catch  {
+    return null;
+  }
+}
+function jwtSub(req) {
+  return jwtPayload(req)?.sub ?? null;
+}
+// REST con el JWT del usuario (RLS activa). Devuelve Response ya parseable.
+async function rest(req, path, init = {}, prefer = "return=representation") {
+  const headers = {
+    apikey: ANON,
+    "Content-Type": "application/json",
+    Prefer: prefer
+  };
+  const auth = req.headers.get("authorization");
+  if (auth) headers["Authorization"] = auth;
+  const r = await fetch(`${SUPA}/rest/v1/${path}`, {
+    ...init,
+    headers
+  });
+  const txt = await r.text();
+  return new Response(txt || "null", {
+    status: r.status,
+    headers: {
+      ...CORS,
+      "Content-Type": "application/json"
+    }
+  });
+}
+async function restJ(req, path, init = {}, prefer = "return=representation") {
+  const r = await rest(req, path, init, prefer);
+  const body = await r.json().catch(()=>null);
+  return {
+    status: r.status,
+    body
+  };
+}
+async function authApi(path, init = {}, fwdAuth = null) {
+  const headers = {
+    apikey: ANON,
+    "Content-Type": "application/json"
+  };
+  if (fwdAuth) headers["Authorization"] = fwdAuth;
+  const r = await fetch(`${SUPA}/auth/v1/${path}`, {
+    ...init,
+    headers
+  });
+  const txt = await r.text();
+  return new Response(txt || "{}", {
+    status: r.status,
+    headers: {
+      ...CORS,
+      "Content-Type": "application/json"
+    }
+  });
+}
+async function rpc(req, fn, args = {}) {
+  const auth = req.headers.get("authorization");
+  const r = await fetch(`${SUPA}/rest/v1/rpc/${fn}`, {
+    method: "POST",
+    headers: {
+      apikey: ANON,
+      "Content-Type": "application/json",
+      ...auth ? {
+        Authorization: auth
+      } : {}
+    },
+    body: JSON.stringify(args)
+  });
+  return {
+    status: r.status,
+    body: await r.json().catch(()=>null)
+  };
+}
+// Usuario enriquecido: shape exacto que espera el frontend (onboarding derivado de datos reales)
+async function buildUser(req, u) {
+  let profile = null, memberships = [];
+  try {
+    const pr = await restJ(req, `profiles?id=eq.${u.id}&select=*`);
+    profile = Array.isArray(pr.body) ? pr.body[0] ?? null : null;
+  } catch  {}
+  try {
+    const mr = await restJ(req, `group_members?user_id=eq.${u.id}&status=eq.active&select=group_id,role`);
+    memberships = Array.isArray(mr.body) ? mr.body : [];
+  } catch  {}
+  const hasProfile = !!profile?.display_name;
+  const hasGroup = memberships.length > 0;
+  const step = !hasProfile ? "profile" : !hasGroup ? "group" : "done";
+  return {
+    id: u.id,
+    email: u.email,
+    language: profile?.locale ?? "es",
+    plan: u.app_metadata?.plan ?? u.user_metadata?.plan ?? "free",
+    account_role: u.app_metadata?.role ?? "user",
+    profile: profile?.display_name ? {
+      name: profile.display_name,
+      surname: null
+    } : null,
+    avatar: {
+      color: profile?.avatar_color ?? "#E11D48",
+      symbol: profile?.avatar_symbol ?? "person",
+      outline: ""
+    },
+    onboarding: {
+      completed: step === "done",
+      step
+    },
+    has_photo: !!profile?.photo_url
+  };
+}
+async function tokenSession(req, gotrueBody) {
+  // gotrueBody: respuesta de token/signup con access_token
+  const auth = `Bearer ${gotrueBody.access_token}`;
+  const ur = await authApi("user", {}, auth);
+  const u = await ur.json().catch(()=>null);
+  if (!u?.id) return null;
+  const req2 = new Request(req.url, {
+    headers: {
+      authorization: auth
+    }
+  });
+  const user = await buildUser(req2, u);
+  return {
+    access_token: gotrueBody.access_token,
+    refresh_token: gotrueBody.refresh_token,
+    expires_in: gotrueBody.expires_in,
+    user
+  };
+}
+// ---------- Mapbox ----------
+const MB_STYLE = (dark)=>dark ? "dark-v11" : "streets-v12";
+function hav(aLat, aLng, bLat, bLng) {
+  const R = 6371000, rad = Math.PI / 180;
+  const dLat = (bLat - aLat) * rad, dLng = (bLng - aLng) * rad;
+  const s = Math.sin(dLat / 2) ** 2 + Math.cos(aLat * rad) * Math.cos(bLat * rad) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(s));
+}
+async function mbGeocode(q, lat, lng, limit = 5) {
+  const u = new URL(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(q)}.json`);
+  u.searchParams.set("access_token", MAPBOX);
+  u.searchParams.set("language", "es");
+  u.searchParams.set("limit", String(limit));
+  u.searchParams.set("country", "ES");
+  u.searchParams.set("types", "address,place,locality,poi");
+  if (lat != null && lng != null) u.searchParams.set("proximity", `${lng},${lat}`);
+  const r = await fetch(u);
+  if (!r.ok) return null;
+  const d = await r.json();
+  return (d.features ?? []).map((f)=>{
+    const ctx = Object.fromEntries((f.context ?? []).map((c)=>[
+        c.id.split(".")[0],
+        c.text
+      ]));
+    const isAddr = (f.place_type ?? []).includes("address");
+    const street = isAddr ? f.text : null;
+    const name = isAddr && f.address ? `${f.text} ${f.address}, ${ctx.place ?? ""}`.trim() : f.place_name;
+    const out = {
+      name,
+      lat: f.center[1],
+      lng: f.center[0],
+      has_number: isAddr && !!f.address,
+      street: street ?? undefined,
+      municipality: ctx.place ?? ctx.locality ?? undefined
+    };
+    if (lat != null && lng != null) out.distance_m = Math.round(hav(lat, lng, out.lat, out.lng));
+    return out;
+  });
+}
+function polyEncode(coords) {
+  let out = "", plat = 0, plng = 0;
+  const enc = (v)=>{
+    v = v < 0 ? ~(v << 1) : v << 1;
+    while(v >= 0x20){
+      out += String.fromCharCode((0x20 | v & 0x1f) + 63);
+      v >>= 5;
+    }
+    out += String.fromCharCode(v + 63);
+  };
+  for (const [la, ln] of coords){
+    const la5 = Math.round(la * 1e5), ln5 = Math.round(ln * 1e5);
+    enc(la5 - plat);
+    enc(ln5 - plng);
+    plat = la5;
+    plng = ln5;
+  }
+  return out;
+}
+async function mbRouteTry(points, prof) {
+  const coords = points.map(([la, ln])=>`${ln},${la}`).join(";");
+  const u = new URL(`https://api.mapbox.com/directions/v5/mapbox/${prof}/${coords}`);
+  u.searchParams.set("access_token", MAPBOX);
+  u.searchParams.set("geometries", "geojson");
+  u.searchParams.set("overview", "full");
+  u.searchParams.set("steps", "true");
+  u.searchParams.set("language", "es");
+  const r = await fetch(u);
+  if (!r.ok) return null;
+  const d = await r.json();
+  return d.routes?.[0] ?? null;
+}
+async function mbRoute(points, mode) {
+  const primary = {
+    car: "driving-traffic",
+    motorcycle: "driving",
+    bicycle: "cycling",
+    pedestrian: "walking"
+  }[mode] ?? "driving";
+  // si el punto cae en zona no transitable (parque, peatonal), el perfil de coche no encuentra ruta: caer a pie
+  const chain = primary === "driving-traffic" ? [
+    "driving-traffic",
+    "driving",
+    "walking"
+  ] : primary === "driving" ? [
+    "driving",
+    "walking"
+  ] : [
+    primary,
+    "walking"
+  ];
+  let route = null, used = primary;
+  for (const prof of chain){
+    route = await mbRouteTry(points, prof).catch(()=>null);
+    if (route) {
+      used = prof;
+      break;
+    }
+  }
+  if (!route) return null;
+  return {
+    geometry: route.geometry.coordinates.map(([ln, la])=>[
+        la,
+        ln
+      ]),
+    distance_m: Math.round(route.distance),
+    duration_s: Math.round(route.duration),
+    duration_traffic_s: Math.round(route.duration_typical ?? route.duration),
+    steps: (route.legs ?? []).flatMap((l)=>(l.steps ?? []).map((s)=>({
+          distance_m: Math.round(s.distance),
+          text: s.maneuver?.instruction ?? ""
+        }))),
+    provider: "mapbox",
+    profile_used: used
+  };
+}
+async function mbStatic(lat, lng, zoom, w, h, dark, pins, path) {
+  // pins: [{lat,lng,hex}], path: [[lat,lng],...]
+  const overlays = [];
+  if (path && path.length > 1) overlays.push(`path-4+E11D48-0.8(${encodeURIComponent(polyEncode(path))})`);
+  for (const p of (pins ?? []).slice(0, 12))overlays.push(`pin-s+${p.hex ?? "E11D48"}(${p.lng},${p.lat})`);
+  const ov = overlays.length ? overlays.join(",") + "/" : "";
+  const scale = w <= 640 && h <= 640 ? "@2x" : "";
+  const u = `https://api.mapbox.com/styles/v1/mapbox/${MB_STYLE(dark)}/static/${ov}${lng},${lat},${zoom}/${Math.round(w)}x${Math.round(h)}${scale}?access_token=${MAPBOX}&logo=false&attribution=false`;
+  const r = await fetch(u);
+  if (!r.ok) return new Response("map error", {
+    status: 502,
+    headers: CORS
+  });
+  const buf = await r.arrayBuffer();
+  return new Response(buf, {
+    status: 200,
+    headers: {
+      ...CORS,
+      "Content-Type": "image/png",
+      "Cache-Control": "public, max-age=30"
+    }
+  });
+}
+const UUID_RE = "([0-9a-fA-F-]{36})";
+Deno.serve(async (req)=>{
+  if (req.method === "OPTIONS") return new Response(null, {
+    status: 204,
+    headers: CORS
+  });
+  const url = new URL(req.url);
+  const p = url.pathname.replace(/^\/sentinel-api/, "").replace(/^\/+/, "/").replace(/\/+$/, "") || "/";
+  const sub = jwtSub(req);
+  const needAuth = ()=>sub ? null : err("UNAUTHORIZED", "No autenticado", 401);
+  try {
+    // ---- Salud / estado ----
+    if (p === "/api/health") return json({
+      ok: true,
+      service: "sentinel-api",
+      version: "0.7.0"
+    });
+    if (p === "/api/system/status") return json({
+      ok: true,
+      service: "sentinel-api",
+      version: "0.7.0",
+      providers: {
+        geocoding: MAPBOX ? {
+          provider: "Mapbox",
+          note: null
+        } : {
+          provider: null,
+          note: "SERVICIO NO CONFIGURADO"
+        },
+        maps_web: MAPBOX ? {
+          provider: "Mapbox Static",
+          note: null
+        } : {
+          provider: null,
+          note: "SERVICIO NO CONFIGURADO"
+        },
+        routing: MAPBOX ? {
+          provider: "Mapbox Directions",
+          note: null
+        } : {
+          provider: null,
+          note: "SERVICIO NO CONFIGURADO"
+        },
+        traffic_incidents: {
+          provider: null,
+          note: "SERVICIO NO CONFIGURADO"
+        }
+      }
+    });
+    // ---- Auth ----
+    if (p === "/api/auth/login" && req.method === "POST") {
+      const b = await req.json().catch(()=>({}));
+      if (!b.email || !b.password) return err("BAD_REQUEST", "Faltan email o contraseña", 400);
+      const r = await authApi("token?grant_type=password", {
+        method: "POST",
+        body: JSON.stringify({
+          email: b.email,
+          password: b.password
+        })
+      });
+      const raw = await r.json().catch(()=>null);
+      if (r.status !== 200 || !raw?.access_token) return err("UNAUTHORIZED", raw?.error_description ?? raw?.msg ?? "Credenciales no válidas", r.status === 200 ? 401 : r.status);
+      const s = await tokenSession(req, raw);
+      return s ? json(s) : err("UNAUTHORIZED", "No se pudo cargar la sesión", 401);
+    }
+    if (p === "/api/auth/register" && req.method === "POST") {
+      const b = await req.json().catch(()=>({}));
+      if (!b.email || !b.password) return err("BAD_REQUEST", "Faltan email o contraseña", 400);
+      const r = await authApi("signup", {
+        method: "POST",
+        body: JSON.stringify({
+          email: b.email,
+          password: b.password,
+          data: {
+            meta: b.client ?? null
+          }
+        })
+      });
+      const raw = await r.json().catch(()=>null);
+      if (r.status >= 400) return err("BAD_REQUEST", raw?.error_description ?? raw?.msg ?? "No se pudo registrar", r.status);
+      if (!raw?.access_token) return err("EMAIL_CONFIRMATION", "Registro creado; confirma el email para entrar", 409);
+      const s = await tokenSession(req, raw);
+      return s ? json(s) : err("INTERNAL", "No se pudo cargar la sesión", 500);
+    }
+    if (p === "/api/auth/refresh" && req.method === "POST") {
+      const b = await req.json().catch(()=>({}));
+      if (!b.refresh_token) return err("BAD_REQUEST", "Falta refresh_token", 400);
+      const r = await authApi("token?grant_type=refresh_token", {
+        method: "POST",
+        body: JSON.stringify({
+          refresh_token: b.refresh_token
+        })
+      });
+      const raw = await r.json().catch(()=>null);
+      if (r.status !== 200 || !raw?.access_token) return err("UNAUTHORIZED", "Sesión caducada", 401);
+      const s = await tokenSession(req, raw);
+      return s ? json(s) : json({
+        access_token: raw.access_token,
+        refresh_token: raw.refresh_token
+      });
+    }
+    if (p === "/api/auth/session" && req.method === "POST") {
+      return err("SERVICE_NOT_CONFIGURED", "Inicio con Google no configurado en este entorno", 503, "auth/session requiere OAuth externo");
+    }
+    if (p === "/api/auth/logout" && req.method === "POST") {
+      const auth = req.headers.get("authorization");
+      if (auth) await authApi("logout", {
+        method: "POST",
+        body: "{}"
+      }, auth).catch(()=>null);
+      return json({
+        ok: true
+      });
+    }
+    if (p === "/api/auth/me" && req.method === "GET") {
+      const auth = req.headers.get("authorization");
+      if (!auth) return err("UNAUTHORIZED", "No autenticado", 401);
+      const r = await authApi("user", {}, auth);
+      if (r.status !== 200) return err("UNAUTHORIZED", "Sesión no válida", 401);
+      const u = await r.json();
+      return json(await buildUser(req, u));
+    }
+    if (p === "/api/auth/sessions" && req.method === "GET") return json([]);
+    // ---- Perfil ----
+    if (p === "/api/profile" && req.method === "GET") {
+      const na = needAuth();
+      if (na) return na;
+      return rest(req, `profiles?id=eq.${sub}&select=*`);
+    }
+    if (p === "/api/profile" && req.method === "PUT") {
+      const na = needAuth();
+      if (na) return na;
+      const b = await req.json().catch(()=>({}));
+      const row = {
+        id: sub
+      };
+      // la app envía name/surname/language; la tabla usa display_name/locale
+      if (b.name !== undefined) row.display_name = String(b.name).trim().slice(0, 80);
+      if (b.display_name !== undefined) row.display_name = String(b.display_name).trim().slice(0, 80);
+      if (b.language !== undefined) row.locale = b.language;
+      for (const k of [
+        "avatar_color",
+        "avatar_symbol",
+        "phone",
+        "locale",
+        "photo_url",
+        "blood_type",
+        "allergies",
+        "emergency_contact_name",
+        "emergency_contact_phone",
+        "insurance_policy",
+        "car_insurance_policy",
+        "insurer_emergency_phone"
+      ]){
+        if (b[k] !== undefined) row[k] = b[k];
+      }
+      return rest(req, "profiles?on_conflict=id", {
+        method: "POST",
+        body: JSON.stringify(row)
+      }, "resolution=merge-duplicates,return=representation");
+    }
+    if (p === "/api/profile/avatar" && req.method === "PUT") {
+      const na = needAuth();
+      if (na) return na;
+      const b = await req.json().catch(()=>({}));
+      const row = {
+        id: sub
+      };
+      if (b.photo_url !== undefined) row.photo_url = b.photo_url;
+      if (b.color !== undefined) row.avatar_color = b.color;
+      if (b.symbol !== undefined) row.avatar_symbol = b.symbol;
+      if (b.avatar_color !== undefined) row.avatar_color = b.avatar_color;
+      if (b.avatar_symbol !== undefined) row.avatar_symbol = b.avatar_symbol;
+      return rest(req, "profiles?on_conflict=id", {
+        method: "POST",
+        body: JSON.stringify(row)
+      }, "resolution=merge-duplicates,return=representation");
+    }
+    if (p === "/api/profile/onboarding-step" && req.method === "PUT") return json({
+      ok: true
+    });
+    // ---- Permisos / consentimientos ----
+    if (p === "/api/permissions/catalog" && req.method === "GET") return json(CATALOG);
+    if (p === "/api/permissions" && req.method === "GET") {
+      const na = needAuth();
+      if (na) return na;
+      return rest(req, `permission_events?user_id=eq.${sub}&order=created_at.desc&limit=50&select=*`);
+    }
+    if (p === "/api/permissions/history" && req.method === "GET") {
+      const na = needAuth();
+      if (na) return na;
+      return rest(req, `permission_events?user_id=eq.${sub}&order=created_at.desc&limit=100&select=*`);
+    }
+    if (p === "/api/permissions" && req.method === "POST") {
+      const b = await req.json().catch(()=>({}));
+      if (!sub) return json({
+        ok: true,
+        stored: false
+      }, 202);
+      const ins = await rest(req, "permission_events", {
+        method: "POST",
+        body: JSON.stringify({
+          user_id: sub,
+          permission: b.key,
+          granted: !!b.granted
+        })
+      });
+      return json({
+        ok: true,
+        stored: ins.status < 400
+      }, ins.status < 400 ? 200 : 202);
+    }
+    if (p === "/api/consents" && req.method === "POST") {
+      const b = await req.json().catch(()=>({}));
+      if (!sub) return json({
+        ok: true,
+        stored: false
+      }, 202);
+      const ins = await rest(req, "consents", {
+        method: "POST",
+        body: JSON.stringify({
+          user_id: sub,
+          doc_type: b.doc_type ?? b.doc ?? b.document ?? "terms",
+          version: b.version ?? "1.0",
+          locale: b.locale ?? "es",
+          platform: b.platform ?? null,
+          app_version: b.app_version ?? null,
+          client_ts: b.client_ts ?? b.accepted_at_client ?? new Date().toISOString()
+        })
+      });
+      return json({
+        ok: true,
+        stored: ins.status < 400
+      }, ins.status < 400 ? 200 : 202);
+    }
+    // ---- Planes ----
+    if (p === "/api/plans" && req.method === "GET") {
+      const r = await restJ(req, "plans?select=*&order=code.asc");
+      const rows = Array.isArray(r.body) ? r.body : [];
+      return json(rows.map((x)=>({
+          code: x.code,
+          name: x.name,
+          price_label: x.limits?.price_label ?? "",
+          entitlements: x.limits?.entitlements ?? {}
+        })));
+    }
+    if (p === "/api/entitlements" && req.method === "GET") {
+      const payload = jwtPayload(req);
+      const plan = payload?.app_metadata?.plan ?? payload?.user_metadata?.plan ?? "free";
+      let canCreate = true;
+      if (sub) {
+        const pr = await restJ(req, `profiles?id=eq.${sub}&select=can_create_groups`);
+        if (Array.isArray(pr.body) && pr.body[0]?.can_create_groups === false) canCreate = false;
+      }
+      const base = {
+        free: {
+          canCreateGroups: true,
+          maxGroups: 1,
+          maxPermanentMembers: 5,
+          maxTemporaryGuests: 2,
+          cameraShareDuration: 60,
+          advancedMobility: false,
+          roadReality: false,
+          familyMetrics: false,
+          convoy: true,
+          meetings: true,
+          antiCongestion: false
+        },
+        basic: {
+          canCreateGroups: true,
+          maxGroups: 3,
+          maxPermanentMembers: 10,
+          maxTemporaryGuests: 5,
+          cameraShareDuration: 60,
+          advancedMobility: true,
+          roadReality: false,
+          familyMetrics: true,
+          convoy: true,
+          meetings: true,
+          antiCongestion: true
+        },
+        pro: {
+          canCreateGroups: true,
+          maxGroups: 10,
+          maxPermanentMembers: 30,
+          maxTemporaryGuests: 20,
+          cameraShareDuration: 120,
+          advancedMobility: true,
+          roadReality: true,
+          familyMetrics: true,
+          convoy: true,
+          meetings: true,
+          antiCongestion: true
+        }
+      };
+      const ent = {
+        ...base[plan] ?? base.free
+      };
+      ent.canCreateGroups = !!ent.canCreateGroups && canCreate;
+      return json({
+        plan,
+        plan_name: plan === "pro" ? "Pro" : plan === "basic" ? "Basic" : "Free",
+        entitlements: ent
+      });
+    }
+    // ---- Grupos ----
+    if (p === "/api/groups" && req.method === "GET") {
+      const na = needAuth();
+      if (na) return na;
+      const r = await restJ(req, "groups?select=*,memberships:group_members(user_id,role,status),invites:invitations(status)");
+      if (r.status >= 400) return json([], r.status);
+      const rows = Array.isArray(r.body) ? r.body : [];
+      return json(rows.map((g)=>{
+        const mine = (g.memberships ?? []).find((m)=>m.user_id === sub);
+        const pending = (g.invites ?? []).filter((i)=>[
+            "pending",
+            "prepared",
+            "dispatched"
+          ].includes(i.status)).length;
+        const { memberships, invites, ...rest0 } = g;
+        return {
+          ...rest0,
+          my_role: mine?.role ?? null,
+          stats: {
+            pending
+          }
+        };
+      }));
+    }
+    if (p === "/api/groups" && req.method === "POST") {
+      const na = needAuth();
+      if (na) return na;
+      const b = await req.json().catch(()=>({}));
+      if (!b.name?.trim()) return err("BAD_REQUEST", "Falta el nombre del grupo", 400);
+      const g = await restJ(req, "groups", {
+        method: "POST",
+        body: JSON.stringify({
+          name: b.name.trim(),
+          owner_id: sub
+        })
+      });
+      if (g.status >= 400) return err("FORBIDDEN", "No se pudo crear el grupo", g.status, JSON.stringify(g.body).slice(0, 200));
+      const row = Array.isArray(g.body) ? g.body[0] : g.body;
+      await restJ(req, "group_members", {
+        method: "POST",
+        body: JSON.stringify({
+          group_id: row.id,
+          user_id: sub,
+          role: "owner",
+          status: "active"
+        })
+      });
+      return json({
+        ...row,
+        my_role: "owner",
+        stats: {
+          pending: 0
+        }
+      }, 201);
+    }
+    const groupMatch = p.match(new RegExp(`^/api/groups/${UUID_RE}$`));
+    if (groupMatch && req.method === "GET") {
+      const na = needAuth();
+      if (na) return na;
+      const gid = groupMatch[1];
+      const r = await restJ(req, `groups?id=eq.${gid}&select=*,members:group_members(user_id,role,status,joined_at,membership,expires_at,profile:profiles(display_name,avatar_color,avatar_symbol,photo_url)),zones:zones(id,name,kind,address_hint,lat,lng,radius_m,is_active),invites:invitations(token,invitee_name,status,membership,expires_at,created_at)`);
+      if (r.status >= 400) return err("FORBIDDEN", "Sin acceso al grupo", r.status);
+      const g = Array.isArray(r.body) ? r.body[0] : r.body;
+      if (!g) return err("NOT_FOUND", "Grupo no encontrado", 404);
+      const members = (g.members ?? []).map((m)=>({
+          id: m.user_id,
+          user_id: m.user_id,
+          role: m.role,
+          status: m.status,
+          joined_at: m.joined_at,
+          membership: m.membership ?? (m.role === "guest" ? "temporary" : "fixed"),
+          expires_at: m.expires_at ?? null,
+          display_name: m.profile?.display_name ?? "Miembro",
+          name: m.profile?.display_name ?? "Miembro",
+          color: m.profile?.avatar_color ?? "#64748B",
+          avatar_symbol: m.profile?.avatar_symbol ?? null,
+          photo_url: m.profile?.photo_url ?? null
+        }));
+      const mine = (g.members ?? []).find((m)=>m.user_id === sub);
+      return json({
+        ...g,
+        members,
+        my_role: mine?.role ?? null,
+        invitations: g.invites ?? [],
+        zones: g.zones ?? []
+      });
+    }
+    if (groupMatch && req.method === "PATCH") {
+      const na = needAuth();
+      if (na) return na;
+      const b = await req.json().catch(()=>({}));
+      if (!b.name?.trim()) return err("BAD_REQUEST", "Falta el nombre", 400);
+      const r = await restJ(req, `groups?id=eq.${groupMatch[1]}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          name: b.name.trim()
+        })
+      });
+      if (r.status >= 400) return err("FORBIDDEN", "No se pudo renombrar", r.status);
+      return json(Array.isArray(r.body) ? r.body[0] ?? {
+        ok: true
+      } : r.body);
+    }
+    if (groupMatch && req.method === "DELETE") {
+      const na = needAuth();
+      if (na) return na;
+      const r = await rest(req, `groups?id=eq.${groupMatch[1]}`, {
+        method: "DELETE"
+      }, "return=minimal");
+      if (r.status >= 400) return err("FORBIDDEN", "No se pudo borrar el grupo", r.status);
+      return json({
+        ok: true
+      });
+    }
+    const formedMatch = p.match(new RegExp(`^/api/groups/${UUID_RE}/formed$`));
+    if (formedMatch && req.method === "POST") {
+      const na = needAuth();
+      if (na) return na;
+      return json({
+        ok: true
+      });
+    }
+    const posMatch = p.match(new RegExp(`^/api/groups/${UUID_RE}/positions$`));
+    if (posMatch && req.method === "GET") {
+      const na = needAuth();
+      if (na) return na;
+      const gid = posMatch[1];
+      const r = await restJ(req, `locations?group_id=eq.${gid}&select=user_id,lat,lng,accuracy,battery,updated_at,profile:profiles(display_name,avatar_color)`);
+      const rows = r.status >= 400 ? [] : Array.isArray(r.body) ? r.body : [];
+      return json(rows.map((l)=>({
+          member_id: l.user_id,
+          user_id: l.user_id,
+          name: l.profile?.display_name ?? "Miembro",
+          color: l.profile?.avatar_color ?? "#64748B",
+          state: l.lat != null && l.lng != null ? "shared" : "hidden",
+          lat: l.lat,
+          lng: l.lng,
+          precision: l.accuracy != null ? String(Math.round(l.accuracy)) : undefined,
+          at: l.updated_at ?? undefined,
+          is_me: l.user_id === sub,
+          status: null
+        })));
+    }
+    const membersMatch = p.match(new RegExp(`^/api/groups/${UUID_RE}/members/${UUID_RE}$`));
+    if (membersMatch && req.method === "DELETE") {
+      const na = needAuth();
+      if (na) return na;
+      const r = await rest(req, `group_members?group_id=eq.${membersMatch[1]}&user_id=eq.${membersMatch[2]}`, {
+        method: "DELETE"
+      }, "return=minimal");
+      if (r.status >= 400) return err("FORBIDDEN", "No se pudo quitar al miembro", r.status);
+      return json({
+        ok: true
+      });
+    }
+    const roleMatch = p.match(new RegExp(`^/api/groups/${UUID_RE}/members/${UUID_RE}/role$`));
+    if (roleMatch && req.method === "PATCH") {
+      const na = needAuth();
+      if (na) return na;
+      const b = await req.json().catch(()=>({}));
+      if (![
+        "owner",
+        "admin",
+        "member",
+        "guest"
+      ].includes(b.role)) return err("BAD_REQUEST", "Rol no válido", 400);
+      const r = await restJ(req, `group_members?group_id=eq.${roleMatch[1]}&user_id=eq.${roleMatch[2]}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          role: b.role
+        })
+      });
+      if (r.status >= 400) return err("FORBIDDEN", "No se pudo cambiar el rol", r.status);
+      return json({
+        ok: true
+      });
+    }
+    // ---- Invitaciones ----
+    const invCreate = p.match(new RegExp(`^/api/groups/${UUID_RE}/invitations$`));
+    if (invCreate && req.method === "POST") {
+      const na = needAuth();
+      if (na) return na;
+      const b = await req.json().catch(()=>({}));
+      if (!b.name?.trim()) return err("BAD_REQUEST", "Falta el nombre del invitado", 400);
+      const gid = invCreate[1];
+      const membership = b.membership === "temporary" ? "temporary" : "fixed";
+      const expires = membership === "temporary" ? new Date(Date.now() + (Number(b.duration_hours) || 24) * 3600e3).toISOString() : null;
+      const row = {
+        group_id: gid,
+        invited_by: sub,
+        invitee_name: b.name.trim(),
+        contact: b.phone ?? b.name.trim(),
+        membership,
+        role: membership === "temporary" ? "guest" : "member",
+        expires_at: expires,
+        status: "prepared"
+      };
+      const ins = await restJ(req, "invitations", {
+        method: "POST",
+        body: JSON.stringify(row)
+      });
+      if (ins.status >= 400) return err("FORBIDDEN", "No se pudo crear la invitación", ins.status, JSON.stringify(ins.body).slice(0, 200));
+      const inv = Array.isArray(ins.body) ? ins.body[0] : ins.body;
+      const g = await restJ(req, `groups?id=eq.${gid}&select=name`);
+      const gname = Array.isArray(g.body) ? g.body[0]?.name : null;
+      const origin = req.headers.get("origin");
+      const link = origin ? `${origin}/invite/${inv.token}` : `sentinel://invite/${inv.token}`;
+      return json({
+        invitation: {
+          id: inv.token,
+          name: inv.invitee_name,
+          channel: b.channel === "sms" ? "sms" : "whatsapp",
+          status: inv.status,
+          phone: b.phone ?? null,
+          multi: false,
+          link,
+          group_name: gname ?? "tu grupo",
+          membership,
+          created_at: inv.created_at,
+          dispatched_at: null
+        }
+      }, 201);
+    }
+    const invDisp = p.match(new RegExp(`^/api/invitations/${UUID_RE}/dispatched$`));
+    if (invDisp && req.method === "POST") {
+      const na = needAuth();
+      if (na) return na;
+      await restJ(req, `invitations?token=eq.${invDisp[1]}&status=eq.prepared`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          status: "dispatched"
+        })
+      });
+      return json({
+        ok: true
+      });
+    }
+    const invTok = p.match(new RegExp(`^/api/invitations/by-token/${UUID_RE}$`));
+    if (invTok && req.method === "GET") {
+      const r = await rpc(req, "get_invitation_preview", {
+        p_token: invTok[1]
+      });
+      const d = r.body;
+      if (!d || d.error) return err("NOT_FOUND", "Invitación no encontrada o enlace no válido", 404);
+      return json({
+        group_name: d.group_name,
+        name: d.invitee_name ?? "invitado",
+        inviter_name: d.inviter_name ?? null,
+        multi: false,
+        membership: d.membership ?? "fixed",
+        expires_at: d.expires_at ?? null,
+        status: "prepared"
+      });
+    }
+    const invResp = p.match(new RegExp(`^/api/invitations/by-token/${UUID_RE}/respond$`));
+    if (invResp && req.method === "POST") {
+      const na = needAuth();
+      if (na) return na;
+      const b = await req.json().catch(()=>({}));
+      const r = await rpc(req, b.accept ? "accept_invitation" : "decline_invitation", {
+        p_token: invResp[1]
+      });
+      const d = r.body;
+      if (!d || d.error) return err("BAD_REQUEST", `No se pudo responder: ${d?.error ?? "error"}`, 400);
+      return json({
+        status: b.accept ? "accepted" : "declined",
+        ...d
+      });
+    }
+    // ---- Ubicación ----
+    if (p === "/api/location" && req.method === "POST") {
+      const na = needAuth();
+      if (na) return na;
+      const b = await req.json().catch(()=>({}));
+      if (typeof b.lat !== "number" || typeof b.lng !== "number") return err("BAD_REQUEST", "Faltan lat/lng", 400);
+      const mem = await restJ(req, `group_members?user_id=eq.${sub}&status=eq.active&select=group_id`);
+      const groups = Array.isArray(mem.body) ? mem.body : [];
+      const at = new Date().toISOString();
+      for (const m of groups){
+        await restJ(req, "locations?on_conflict=user_id,group_id", {
+          method: "POST",
+          body: JSON.stringify({
+            user_id: sub,
+            group_id: m.group_id,
+            lat: b.lat,
+            lng: b.lng,
+            accuracy: typeof b.accuracy === "number" ? b.accuracy : null,
+            battery: typeof b.battery === "number" ? Math.round(b.battery) : null,
+            updated_at: at
+          })
+        }, "resolution=merge-duplicates,return=minimal");
+      }
+      return json({
+        at,
+        groups_updated: groups.length
+      });
+    }
+    // ---- Eventos (alert_events) ----
+    if (p === "/api/events" && req.method === "POST") {
+      const na = needAuth();
+      if (na) return na;
+      const b = await req.json().catch(()=>({}));
+      if (!b.group_id || !b.kind) return err("BAD_REQUEST", "Faltan group_id o kind", 400);
+      const status = b.severity === "critical" || b.kind === "emergency" ? "emergency" : "open";
+      const ins = await restJ(req, "alert_events", {
+        method: "POST",
+        body: JSON.stringify({
+          user_id: sub,
+          group_id: b.group_id,
+          kind: b.kind,
+          status,
+          target_user_id: b.target_user_id ?? null,
+          lat: typeof b.lat === "number" ? b.lat : null,
+          lng: typeof b.lng === "number" ? b.lng : null
+        })
+      });
+      if (ins.status >= 400) return err("FORBIDDEN", "No se pudo registrar el evento", ins.status, JSON.stringify(ins.body).slice(0, 200));
+      return json(Array.isArray(ins.body) ? ins.body[0] : ins.body, 201);
+    }
+    const evList = p.match(new RegExp(`^/api/groups/${UUID_RE}/events$`));
+    if (evList && req.method === "GET") {
+      const na = needAuth();
+      if (na) return na;
+      const r = await restJ(req, `alert_events?group_id=eq.${evList[1]}&order=created_at.desc&limit=50&select=*,author:profiles!alert_events_user_id_fkey(display_name,avatar_color)`);
+      const rows = Array.isArray(r.body) ? r.body : [];
+      return json(rows.map((e)=>({
+          id: String(e.id),
+          kind: e.kind,
+          status: e.status,
+          lat: e.lat,
+          lng: e.lng,
+          user_id: e.user_id,
+          target_user_id: e.target_user_id,
+          created_at: e.created_at,
+          author_name: e.author?.display_name ?? "Miembro",
+          color: e.author?.avatar_color ?? "#64748B"
+        })));
+    }
+    const evAction = p.match(new RegExp(`^/api/events/(\\d+)/action$`));
+    if (evAction && req.method === "POST") {
+      const na = needAuth();
+      if (na) return na;
+      const b = await req.json().catch(()=>({}));
+      const status = b.action === "resolve" ? "resolved" : b.action === "escalate" ? "escalated" : "open";
+      const r = await restJ(req, `alert_events?id=eq.${evAction[1]}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          status
+        })
+      });
+      if (r.status >= 400) return err("FORBIDDEN", "No se pudo actualizar el evento", r.status);
+      return json({
+        ok: true,
+        status
+      });
+    }
+    // ---- Quedadas ----
+    if (p === "/api/meetings" && req.method === "POST") {
+      const na = needAuth();
+      if (na) return na;
+      const b = await req.json().catch(()=>({}));
+      if (!b.group_id || !b.name?.trim()) return err("BAD_REQUEST", "Faltan group_id o name", 400);
+      let lat = typeof b.lat === "number" ? b.lat : null;
+      let lng = typeof b.lng === "number" ? b.lng : null;
+      let place = b.place_name ?? null;
+      if ((lat == null || lng == null) && (b.place_query || b.natural_command) && MAPBOX) {
+        const found = await mbGeocode(b.place_query ?? b.natural_command, null, null, 1).catch(()=>null);
+        if (found?.[0]) {
+          lat = found[0].lat;
+          lng = found[0].lng;
+          place = place ?? found[0].name;
+        }
+      }
+      const ins = await restJ(req, "meetings", {
+        method: "POST",
+        body: JSON.stringify({
+          group_id: b.group_id,
+          name: b.name.trim(),
+          place_name: place,
+          lat,
+          lng,
+          created_by: sub
+        })
+      });
+      if (ins.status >= 400) return err("FORBIDDEN", "No se pudo crear la quedada", ins.status, JSON.stringify(ins.body).slice(0, 200));
+      const m = Array.isArray(ins.body) ? ins.body[0] : ins.body;
+      const mem = await restJ(req, `group_members?group_id=eq.${b.group_id}&status=eq.active&select=user_id`);
+      const rows = (Array.isArray(mem.body) ? mem.body : []).map((x)=>({
+          meeting_id: m.id,
+          user_id: x.user_id,
+          state: x.user_id === sub ? "aceptado" : "invitado"
+        }));
+      if (rows.length) await restJ(req, "meeting_participants", {
+        method: "POST",
+        body: JSON.stringify(rows)
+      }, "return=minimal");
+      return json({
+        id: m.id,
+        name: m.name,
+        status: m.status
+      }, 201);
+    }
+    const meetList = p.match(new RegExp(`^/api/groups/${UUID_RE}/meetings$`));
+    if (meetList && req.method === "GET") {
+      const na = needAuth();
+      if (na) return na;
+      const r = await restJ(req, `meetings?group_id=eq.${meetList[1]}&order=created_at.desc&limit=20&select=*`);
+      return json(Array.isArray(r.body) ? r.body : []);
+    }
+    const meetGet = p.match(new RegExp(`^/api/meetings/${UUID_RE}$`));
+    if (meetGet && req.method === "GET") {
+      const na = needAuth();
+      if (na) return na;
+      const mid = meetGet[1];
+      const r = await restJ(req, `meetings?id=eq.${mid}&select=*,participants:meeting_participants(user_id,state,updated_at)`);
+      if (r.status >= 400) return err("FORBIDDEN", "Sin acceso a la quedada", r.status);
+      const m = Array.isArray(r.body) ? r.body[0] : r.body;
+      if (!m || !m.id) return err("NOT_FOUND", "Quedada no encontrada", 404);
+      const uids = (m.participants ?? []).map((x)=>x.user_id);
+      const profs = uids.length ? await restJ(req, `profiles?id=in.(${uids.join(",")})&select=id,display_name,avatar_color`) : {
+        body: []
+      };
+      const profBy = Object.fromEntries((Array.isArray(profs.body) ? profs.body : []).map((x)=>[
+          x.id,
+          x
+        ]));
+      for (const pt of m.participants ?? [])pt.profile = profBy[pt.user_id] ?? null;
+      const locs = await restJ(req, `locations?group_id=eq.${m.group_id}&select=user_id,lat,lng,updated_at`);
+      const locBy = Object.fromEntries((Array.isArray(locs.body) ? locs.body : []).map((l)=>[
+          l.user_id,
+          l
+        ]));
+      const participants = [];
+      for (const pt of m.participants ?? []){
+        let eta = {
+          state: "unavailable",
+          label: "Sin ubicación compartida"
+        };
+        const l = locBy[pt.user_id];
+        if (l && m.lat != null && m.lng != null && MAPBOX) {
+          const route = await mbRoute([
+            [
+              l.lat,
+              l.lng
+            ],
+            [
+              m.lat,
+              m.lng
+            ]
+          ], "car").catch(()=>null);
+          if (route) eta = {
+            state: "ok",
+            eta_s: route.duration_s,
+            distance_m: route.distance_m,
+            traffic: route.duration_traffic_s > route.duration_s * 1.05,
+            provider: "mapbox"
+          };
+        } else if (l && !MAPBOX) eta = {
+          state: "unavailable",
+          label: "Routing no configurado"
+        };
+        participants.push({
+          user_id: pt.user_id,
+          name: pt.profile?.display_name ?? "Miembro",
+          color: pt.profile?.avatar_color ?? "#64748B",
+          state: pt.state,
+          eta
+        });
+      }
+      return json({
+        id: m.id,
+        name: m.name,
+        status: m.status,
+        group_id: m.group_id,
+        is_organizer: m.created_by === sub,
+        deep_link: `sentinel://meeting/${m.id}`,
+        destination: m.lat != null ? {
+          name: m.place_name ?? "Destino",
+          lat: m.lat,
+          lng: m.lng
+        } : null,
+        participants,
+        created_at: m.created_at
+      });
+    }
+    const meetResp = p.match(new RegExp(`^/api/meetings/${UUID_RE}/respond$`));
+    if (meetResp && req.method === "POST") {
+      const na = needAuth();
+      if (na) return na;
+      const b = await req.json().catch(()=>({}));
+      const okStates = [
+        "invitado",
+        "pendiente",
+        "aceptado",
+        "propone_otra_hora",
+        "propone_otro_lugar",
+        "no_puede_acudir",
+        "preparando_salida",
+        "en_camino",
+        "retrasado",
+        "cerca",
+        "llegado"
+      ];
+      if (!okStates.includes(b.state)) return err("BAD_REQUEST", "Estado no válido", 400);
+      const r = await restJ(req, `meeting_participants?meeting_id=eq.${meetResp[1]}&user_id=eq.${sub}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          state: b.state,
+          updated_at: new Date().toISOString()
+        })
+      });
+      if (r.status >= 400) return err("FORBIDDEN", "No se pudo actualizar tu estado", r.status);
+      return json({
+        ok: true,
+        state: b.state
+      });
+    }
+    const meetClose = p.match(new RegExp(`^/api/meetings/${UUID_RE}/close$`));
+    if (meetClose && req.method === "POST") {
+      const na = needAuth();
+      if (na) return na;
+      const r = await restJ(req, `meetings?id=eq.${meetClose[1]}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          status: "closed"
+        })
+      });
+      if (r.status >= 400) return err("FORBIDDEN", "No se pudo cerrar la quedada", r.status);
+      return json({
+        ok: true,
+        status: "closed"
+      });
+    }
+    // ---- Convoys / trips: honestamente vacíos (funcionalidad no construida) ----
+    const convList = p.match(new RegExp(`^/api/groups/${UUID_RE}/convoys$`));
+    if (convList && req.method === "GET") return json([]);
+    if (p === "/api/trips/pending" && req.method === "GET") return json([]);
+    // ---- Mobility (Mapbox) ----
+    if (p === "/api/mobility/geocode" && req.method === "GET") {
+      const na = needAuth();
+      if (na) return na;
+      if (!MAPBOX) return err("SERVICE_NOT_CONFIGURED", "Geocodificación no configurada", 503);
+      const q = url.searchParams.get("q") ?? "";
+      if (q.trim().length < 2) return json([]);
+      const out = await mbGeocode(q.trim(), null, null, 5).catch(()=>null);
+      if (!out) return err("UPSTREAM", "El servicio de geocodificación no respondió", 502);
+      return json(out);
+    }
+    if (p === "/api/mobility/autocomplete" && req.method === "GET") {
+      const na = needAuth();
+      if (na) return na;
+      if (!MAPBOX) return err("SERVICE_NOT_CONFIGURED", "Autocompletado no configurado", 503);
+      const q = url.searchParams.get("q") ?? "";
+      if (q.trim().length < 2) return json([]);
+      const la = url.searchParams.get("lat"), ln = url.searchParams.get("lng");
+      const out = await mbGeocode(q.trim(), la ? Number(la) : null, ln ? Number(ln) : null, 6).catch(()=>null);
+      if (!out) return err("UPSTREAM", "El servicio de búsqueda no respondió", 502);
+      return json(out);
+    }
+    if (p === "/api/mobility/history" && req.method === "GET") {
+      const na = needAuth();
+      if (na) return na;
+      const r = await restJ(req, `nav_history?user_id=eq.${sub}&order=created_at.desc&limit=20&select=name,lat,lng,created_at`);
+      let rows = Array.isArray(r.body) ? r.body : [];
+      const la = url.searchParams.get("lat"), ln = url.searchParams.get("lng");
+      if (la && ln) {
+        const a = Number(la), b2 = Number(ln);
+        rows = rows.map((x)=>({
+            ...x,
+            distance_m: Math.round(hav(a, b2, x.lat, x.lng))
+          })).sort((x, y)=>x.distance_m - y.distance_m);
+      }
+      return json(rows.slice(0, 10));
+    }
+    if (p === "/api/mobility/history" && req.method === "POST") {
+      const na = needAuth();
+      if (na) return na;
+      const b = await req.json().catch(()=>({}));
+      if (!b.name || typeof b.lat !== "number" || typeof b.lng !== "number") return err("BAD_REQUEST", "Faltan datos del destino", 400);
+      await restJ(req, "nav_history", {
+        method: "POST",
+        body: JSON.stringify({
+          user_id: sub,
+          name: String(b.name).slice(0, 200),
+          lat: b.lat,
+          lng: b.lng
+        })
+      }, "return=minimal");
+      return json({
+        ok: true
+      }, 201);
+    }
+    if (p === "/api/mobility/nav-route" && req.method === "POST") {
+      const na = needAuth();
+      if (na) return na;
+      if (!MAPBOX) return err("SERVICE_NOT_CONFIGURED", "Navegación no configurada", 503);
+      const b = await req.json().catch(()=>({}));
+      const pts = Array.isArray(b.points) ? b.points.filter((x)=>Array.isArray(x) && x.length >= 2) : [];
+      if (pts.length < 2) return err("BAD_REQUEST", "Se necesitan origen y destino", 400);
+      const route = await mbRoute(pts.slice(0, 25), b.mode ?? "car").catch(()=>null);
+      if (!route) return err("UPSTREAM", "No se pudo calcular la ruta", 502);
+      return json(route);
+    }
+    if (p === "/api/mobility/reverse" && req.method === "GET") {
+      const na = needAuth();
+      if (na) return na;
+      if (!MAPBOX) return err("SERVICE_NOT_CONFIGURED", "Geocodificación inversa no configurada", 503);
+      const la = Number(url.searchParams.get("lat")), ln = Number(url.searchParams.get("lng"));
+      if (!Number.isFinite(la) || !Number.isFinite(ln)) return err("BAD_REQUEST", "Faltan lat/lng", 400);
+      const r = await fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${ln},${la}.json?access_token=${MAPBOX}&language=es&limit=1`);
+      if (!r.ok) return err("UPSTREAM", "El servicio de geocodificación no respondió", 502);
+      const d = await r.json();
+      const f = d.features?.[0];
+      return json({
+        name: f?.place_name ?? `${la.toFixed(5)}, ${ln.toFixed(5)}`,
+        lat: la,
+        lng: ln
+      });
+    }
+    if (p === "/api/mobility/static.png" && req.method === "GET") {
+      // público: las imágenes <Image> no envían Authorization. Solo expone teselas de mapa; el token queda en servidor.
+      if (!MAPBOX) return new Response("map service not configured", {
+        status: 503,
+        headers: CORS
+      });
+      const n = (k, d)=>{
+        const v = Number(url.searchParams.get(k));
+        return Number.isFinite(v) ? v : d;
+      };
+      const lat = n("lat", 40.4168), lng = n("lng", -3.7038), zoom = Math.max(3, Math.min(19, n("zoom", 12)));
+      const w = Math.max(200, Math.min(1280, n("w", 600))), h = Math.max(200, Math.min(1280, n("h", 400)));
+      const dark = url.searchParams.get("dark") === "true";
+      const pins = (url.searchParams.get("pins") ?? "").split(";").filter(Boolean).map((s)=>{
+        const [a, o, c] = s.split(",");
+        return {
+          lat: Number(a),
+          lng: Number(o),
+          hex: /^[0-9a-fA-F]{6}$/.test(c ?? "") ? c : "E11D48"
+        };
+      }).filter((x)=>Number.isFinite(x.lat) && Number.isFinite(x.lng));
+      const path = (url.searchParams.get("path") ?? "").split(";").filter(Boolean).map((s)=>s.split(",").map(Number)).filter((x)=>x.length === 2 && x.every(Number.isFinite));
+      return await mbStatic(lat, lng, zoom, w, h, dark, pins, path.length > 1 ? path : null);
+    }
+    // ---- Fotos de perfil (bucket privado "avatars" + RLS de Storage) ----
+    // El objeto vive en avatars/{user_id}/{uuid}.{ext}; la RLS de storage.objects
+    // limita escritura a la carpeta propia y lectura a uno mismo o co-miembros de grupo
+    // (shares_group_with). profiles.photo_url guarda la ruta del objeto.
+    if (p === "/api/profile/photo" && req.method === "POST") {
+      const na = needAuth();
+      if (na) return na;
+      const form = await req.formData().catch(()=>null);
+      const file = form?.get("file");
+      if (!file || typeof file === "string") return err("BAD_REQUEST", "Falta el archivo", 400);
+      const ct = (file.type || "").toLowerCase();
+      const ext = ({
+        "image/jpeg": "jpg",
+        "image/png": "png",
+        "image/webp": "webp"
+      })[ct];
+      if (!ext) return err("UNSUPPORTED", "Formato no soportado (JPEG, PNG o WebP)", 415);
+      const data = new Uint8Array(await file.arrayBuffer());
+      if (data.length > 6291456) return err("TOO_BIG", "La foto supera 6 MB", 413);
+      const objPath = `${sub}/${crypto.randomUUID()}.${ext}`;
+      const auth = req.headers.get("authorization");
+      const up = await fetch(`${SUPA}/storage/v1/object/avatars/${objPath}`, {
+        method: "POST",
+        headers: {
+          apikey: ANON,
+          Authorization: auth,
+          "Content-Type": ct
+        },
+        body: data
+      });
+      if (!up.ok) {
+        const t = await up.text().catch(()=>"");
+        return err("STORAGE", "No se pudo guardar la foto", 502, t.slice(0, 200));
+      }
+      const prev = await restJ(req, `profiles?id=eq.${sub}&select=photo_url`);
+      const old = prev.body?.[0]?.photo_url;
+      await restJ(req, `profiles?id=eq.${sub}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          photo_url: objPath
+        })
+      });
+      if (old && old !== objPath) await fetch(`${SUPA}/storage/v1/object/avatars/${old}`, {
+        method: "DELETE",
+        headers: {
+          apikey: ANON,
+          Authorization: auth
+        }
+      }).catch(()=>{});
+      return json({
+        ok: true,
+        has_photo: true
+      });
+    }
+    if (p === "/api/profile/photo" && req.method === "DELETE") {
+      const na = needAuth();
+      if (na) return na;
+      const auth = req.headers.get("authorization");
+      const cur = await restJ(req, `profiles?id=eq.${sub}&select=photo_url`);
+      const old = cur.body?.[0]?.photo_url;
+      if (old) await fetch(`${SUPA}/storage/v1/object/avatars/${old}`, {
+        method: "DELETE",
+        headers: {
+          apikey: ANON,
+          Authorization: auth
+        }
+      }).catch(()=>{});
+      await restJ(req, `profiles?id=eq.${sub}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          photo_url: null
+        })
+      });
+      return json({
+        ok: true,
+        has_photo: false
+      });
+    }
+    const mPhoto = p.match(/^\/api\/media\/user\/([0-9a-fA-F-]{36})\/photo$/);
+    if (mPhoto && req.method === "GET") {
+      // viewer: Authorization header o ?token= (las <img> de web no envían cabeceras)
+      const qt = url.searchParams.get("token");
+      const authz = req.headers.get("authorization") ?? (qt ? `Bearer ${qt}` : null);
+      if (!authz) return err("UNAUTHORIZED", "No autenticado", 401);
+      let viewer = null;
+      try {
+        viewer = JSON.parse(atob(authz.slice(7).split(".")[1].replace(/-/g, "+").replace(/_/g, "/")))?.sub ?? null;
+      } catch  {
+        viewer = null;
+      }
+      if (!viewer) return err("UNAUTHORIZED", "Sesión no válida", 401);
+      const target = mPhoto[1];
+      if (viewer !== target) {
+        const hdrs = {
+          apikey: ANON,
+          Authorization: authz,
+          "Content-Type": "application/json"
+        };
+        const mine = await fetch(`${SUPA}/rest/v1/group_members?user_id=eq.${viewer}&status=eq.active&select=group_id`, {
+          headers: hdrs
+        }).then((r)=>r.json()).catch(()=>[]);
+        const gids = (Array.isArray(mine) ? mine : []).map((m)=>m.group_id);
+        let shared = false;
+        if (gids.length) {
+          const other = await fetch(`${SUPA}/rest/v1/group_members?user_id=eq.${target}&status=eq.active&group_id=in.(${gids.join(",")})&select=group_id&limit=1`, {
+            headers: hdrs
+          }).then((r)=>r.json()).catch(()=>[]);
+          shared = Array.isArray(other) && other.length > 0;
+        }
+        if (!shared) return err("FORBIDDEN", "No compartes grupo con esta persona", 403);
+      }
+      const pr = await fetch(`${SUPA}/rest/v1/profiles?id=eq.${target}&select=photo_url`, {
+        headers: {
+          apikey: ANON,
+          Authorization: authz
+        }
+      }).then((r)=>r.json()).catch(()=>[]);
+      const photoUrl = Array.isArray(pr) ? pr[0]?.photo_url : null;
+      if (!photoUrl) return err("NOT_FOUND", "Sin foto", 404);
+      const obj = await fetch(`${SUPA}/storage/v1/object/authenticated/avatars/${photoUrl}`, {
+        headers: {
+          apikey: ANON,
+          Authorization: authz
+        }
+      });
+      if (!obj.ok) return err("NOT_FOUND", "Foto no disponible", 404);
+      return new Response(obj.body, {
+        status: 200,
+        headers: {
+          ...CORS,
+          "Content-Type": obj.headers.get("Content-Type") ?? "image/jpeg",
+          "Cache-Control": "private, max-age=300"
+        }
+      });
+    }
+    return json({
+      detail: {
+        code: "SERVICE_NOT_CONFIGURED",
+        title: "Ruta no disponible",
+        reason: p
+      }
+    }, 503);
+  } catch (e) {
+    return json({
+      detail: {
+        code: "INTERNAL",
+        title: "Error interno",
+        reason: String(e)
+      }
+    }, 500);
+  }
+});

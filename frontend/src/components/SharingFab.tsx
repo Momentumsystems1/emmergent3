@@ -10,13 +10,15 @@ import { api } from "@/src/api";
 import { useAuth } from "@/src/auth";
 import { Button, T } from "@/src/components/ui";
 import { makeStyles, radius, spacing, useTheme } from "@/src/theme";
+import { fetchPermissionsRecord } from "@/src/permissions";
+import { fetchGroups } from "@/src/groups";
 
 const LABELS: Record<string, string> = { exact_location: "Ubicación exacta", approx_location: "Zona aproximada", eta: "ETA", status: "Estado", recent_route: "Ruta reciente", mobility_mode: "Modo de movilidad", patterns: "Patrones", safety_alerts: "Alertas", v16: "V16", camera: "Cámara", microphone: "Micrófono", road_reality: "Road Reality", metrics: "Métricas", group_visibility: "Visibilidad" };
 
 export function useSharingSummary() {
   const { user } = useAuth();
-  const perms = useQuery({ queryKey: ["permissions"], queryFn: () => api<Record<string, any>>("/permissions"), refetchInterval: 30000 });
-  const groups = useQuery({ queryKey: ["groups"], queryFn: () => api<any[]>("/groups") });
+  const perms = useQuery({ queryKey: ["permissions"], queryFn: fetchPermissionsRecord, refetchInterval: 30000 });
+  const groups = useQuery({ queryKey: ["groups"], queryFn: fetchGroups });
   const active = Object.values(perms.data ?? {}).filter((v: any) => v.effective) as any[];
   const keys = Array.from(new Set(active.map((v) => v.key as string)));
   const group = groups.data?.[0];

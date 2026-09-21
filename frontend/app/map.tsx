@@ -15,6 +15,7 @@ import Animated, { FadeInDown, FadeOut } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api } from "@/src/api";
+import { fetchPermissionsRecord } from "@/src/permissions";
 import { useAuth } from "@/src/auth";
 import { Incident, INCIDENT_TYPE, incidentIcon, LatLng, MapCanvas, MapPerson } from "@/src/components/MapCanvas";
 import { GroupsRail } from "@/src/components/GroupsRail";
@@ -29,6 +30,7 @@ import { Button, Glass, T, toast } from "@/src/components/ui";
 import { useLocationSharing } from "@/src/hooks/useLocationSharing";
 import { fonts, makeStyles, radius, spacing, useTheme } from "@/src/theme";
 import { storage } from "@/src/utils/storage";
+import { fetchGroups } from "@/src/groups";
 
 const distM = (a: LatLng, b: LatLng) => { const R = 6371000, dLat = ((b.lat - a.lat) * Math.PI) / 180, dLng = ((b.lng - a.lng) * Math.PI) / 180; const h = Math.sin(dLat / 2) ** 2 + Math.cos((a.lat * Math.PI) / 180) * Math.cos((b.lat * Math.PI) / 180) * Math.sin(dLng / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(h)); };
 const fmtDist = (m: number) => (m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`);
@@ -52,9 +54,9 @@ export default function MapHome() {
   const [myPos, setMyPos] = useState<LatLng | null>(null);
   const [focus, setFocus] = useState<(LatLng & { key: number }) | undefined>();
 
-  const groups = useQuery({ queryKey: ["groups"], queryFn: () => api<any[]>("/groups"), refetchInterval: 15000 });
-  const group = groups.data?.[0];
-  const perms = useQuery({ queryKey: ["permissions"], queryFn: () => api<Record<string, any>>("/permissions") });
+  const groups = useQuery({ queryKey: ["groups"], queryFn: fetchGroups, refetchInterval: 15000 });
+  const group: any = groups.data?.[0];
+  const perms = useQuery({ queryKey: ["permissions"], queryFn: fetchPermissionsRecord });
   const positions = useQuery({ queryKey: ["positions", group?.id], enabled: !!group, refetchInterval: 10000, queryFn: () => api<MapPerson[]>(`/groups/${group.id}/positions`) });
   const sharesLocation = !!perms.data && Object.values(perms.data).some((v: any) => v.effective && (v.key === "exact_location" || v.key === "approx_location"));
   const loc = useLocationSharing(sharesLocation);

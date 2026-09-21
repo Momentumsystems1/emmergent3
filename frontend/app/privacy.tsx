@@ -8,9 +8,11 @@ import { Switch, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api } from "@/src/api";
+import { fetchPermissionsRecord } from "@/src/permissions";
 import { CardBars, CardDivider, CardFooter, CardHeader, CardLabel, CardStatus, Hi, InfoRow, PulseCard, StatusDot, StreamLine } from "@/src/cards/PulseCard";
 import { Header, T, toast } from "@/src/components/ui";
 import { makeStyles, spacing, useTheme } from "@/src/theme";
+import { fetchGroups } from "@/src/groups";
 
 type Cat = { key: string; label: string; why: string };
 const hhmm = (d: string) => new Date(d).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -22,10 +24,10 @@ export default function Privacy() {
   const qc = useQueryClient();
   const [flipped, setFlipped] = useState(false);
   const catalog = useQuery({ queryKey: ["perm-catalog"], queryFn: () => api<Cat[]>("/permissions/catalog") });
-  const perms = useQuery({ queryKey: ["permissions"], queryFn: () => api<Record<string, any>>("/permissions") });
+  const perms = useQuery({ queryKey: ["permissions"], queryFn: fetchPermissionsRecord });
   const history = useQuery({ queryKey: ["perm-history"], queryFn: () => api<any[]>("/permissions/history") });
   const sessions = useQuery({ queryKey: ["sessions"], queryFn: () => api<any[]>("/auth/sessions") });
-  const groups = useQuery({ queryKey: ["groups"], queryFn: () => api<any[]>("/groups") });
+  const groups = useQuery({ queryKey: ["groups"], queryFn: fetchGroups });
   const toggle = useMutation({
     mutationFn: ({ key, granted }: { key: string; granted: boolean }) => api("/permissions", { method: "POST", json: { key, granted, scope: "all", reason: "privacy_card" } }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["permissions"] }); qc.invalidateQueries({ queryKey: ["perm-history"] }); qc.invalidateQueries({ queryKey: ["positions"] }); },

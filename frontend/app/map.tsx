@@ -36,6 +36,7 @@ import { storage } from "@/src/utils/storage";
 import { fetchGroups } from "@/src/groups";
 import { fetchActiveConvoy } from "@/src/convoys";
 import { fetchZones, insertZoneEvent, insideZone } from "@/src/zones";
+import { recordTrailPoint } from "@/src/co2";
 
 const distM = (a: LatLng, b: LatLng) => { const R = 6371000, dLat = ((b.lat - a.lat) * Math.PI) / 180, dLng = ((b.lng - a.lng) * Math.PI) / 180; const h = Math.sin(dLat / 2) ** 2 + Math.cos((a.lat * Math.PI) / 180) * Math.cos((b.lat * Math.PI) / 180) * Math.sin(dLng / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(h)); };
 const fmtDist = (m: number) => (m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`);
@@ -109,6 +110,13 @@ export default function MapHome() {
   // First fix → center once with navigator zoom; afterwards only the recenter FAB moves the camera.
   // eslint-disable-next-line react-hooks/set-state-in-effect, react-hooks/exhaustive-deps -- one-shot centering on the first GPS fix
   useEffect(() => { if (mePos && !focus) setFocus({ lat: mePos.lat, lng: mePos.lng, key: 1 }); }, [mePos?.lat, mePos?.lng, focus]);
+
+  // Trail de ubicación (base del cálculo de CO2): solo cuando comparto y con posición real
+  useEffect(() => {
+    if (!mePos || !group?.id || !user?.id || !sharesLocation) return;
+    recordTrailPoint(group.id, user.id, mePos, telemetry.speedKmh);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mePos?.lat, mePos?.lng, group?.id, user?.id, sharesLocation]);
 
   // Transiciones de cercas: al cambiar mi posición, detecto entradas/salidas y las registro.
   // RLS solo deja insertar eventos propios (user_id = auth.uid()): el aviso de otros miembros

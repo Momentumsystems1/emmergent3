@@ -21,25 +21,51 @@ const uny = (y: number, z: number) => { const n = Math.PI - (2 * Math.PI * y) / 
 const hex = (c?: string) => (c && /^#[0-9a-fA-F]{6}$/.test(c) ? c.slice(1) : "E11D48");
 
 const GKEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_KEY ?? "";
+// Segunda key de respaldo: si la principal está restringida/bloqueada en este dominio, se prueba la alternativa.
+const GKEY_FALLBACK = process.env.EXPO_PUBLIC_GOOGLE_MAPS_KEY_FALLBACK ?? "";
+const GKEYS = [...new Set([GKEY, GKEY_FALLBACK].filter((k) => !!k))];
 // Optional vector Map ID (cloud console). With it: tilt/3D on roadmap + AdvancedMarkerElement. Without: raster roadmap (no tilt).
 const GMAPID = process.env.EXPO_PUBLIC_GOOGLE_MAP_ID ?? "";
 const FOLLOW_ZOOM = 17.5; // close follow on a person (native uses pitch3d=50 + tight zoom; mirror it on web)
 
 // ---------- Google Maps boot (no dependency: script injection + importLibrary) ----------
 declare global { interface Window { google?: any; __mcGmapsPromise?: Promise<any> } }
+// Inyecta el bootstrap de Google para UNA key. Con loading=async, el onload del <script> solo
+// confirma que el loader ligero llegó; window.google.maps aparece DESPUÉS (puede tardar segundos
+// en móvil). Por eso tras onload se hace polling en vez de rechazar de inmediato: el rechazo
+// prematuro era la causa del falso "fallo" que activaba el mapa estático.
+function injectGmaps(key: string, timeoutMs = 20000): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = `https://maps.googleapis.com/maps/api/js?key=${key}&v=weekly&loading=async`;
+    s.async = true;
+    let settled = false;
+    const done = (err?: Error) => { if (settled) return; settled = true; clearTimeout(to); clearInterval(poll); if (err) s.remove(); err ? reject(err) : resolve(window.google.maps); };
+    const to = setTimeout(() => done(new Error("gmaps timeout")), timeoutMs);
+    let polls = 0;
+    let poll: any;
+    s.onerror = () => done(new Error("gmaps script error"));
+    s.onload = () => {
+      poll = setInterval(() => {
+        if (window.google?.maps) done();
+        else if (++polls > 100) done(new Error("gmaps not present")); // ~10s de gracia tras onload
+      }, 100);
+    };
+    document.head.appendChild(s);
+  });
+}
 function loadGmaps(): Promise<any> {
   if (typeof window === "undefined") return Promise.reject(new Error("no window"));
   if (window.google?.maps) return Promise.resolve(window.google.maps);
   if (window.__mcGmapsPromise) return window.__mcGmapsPromise;
-  window.__mcGmapsPromise = new Promise((resolve, reject) => {
-    const s = document.createElement("script");
-    s.src = `https://maps.googleapis.com/maps/api/js?key=${GKEY}&v=weekly&loading=async`;
-    s.async = true;
-    s.onerror = () => { window.__mcGmapsPromise = undefined; reject(new Error("gmaps script error")); };
-    s.onload = () => { window.google?.maps ? resolve(window.google.maps) : reject(new Error("gmaps not present")); };
-    document.head.appendChild(s);
-    setTimeout(() => { if (!window.google?.maps) { window.__mcGmapsPromise = undefined; reject(new Error("gmaps timeout")); } }, 12000);
-  });
+  window.__mcGmapsPromise = (async () => {
+    let lastErr: any = new Error("no gmaps keys configured");
+    for (const key of GKEYS) {
+      try { return await injectGmaps(key); } catch (e) { lastErr = e; }
+    }
+    window.__mcGmapsPromise = undefined;
+    throw lastErr;
+  })();
   return window.__mcGmapsPromise;
 }
 
@@ -97,6 +123,8 @@ function GoogleMapCanvas(props: MapCanvasProps) {
   const trafficRef = useRef<any>(null);
   const [failed, setFailed] = useState(false);
   const [ready, setReady] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const retry = () => { if (typeof window !== "undefined") window.__mcGmapsPromise = undefined; setFailed(false); setReady(false); setAttempt((a) => a + 1); };
 
   const located = people.filter((p) => p.state === "shared" && p.lat != null);
   const me = located.find((p) => p.is_me);
@@ -146,7 +174,7 @@ function GoogleMapCanvas(props: MapCanvasProps) {
       mapRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [attempt]);
 
   // style follow (theme switch without rebuild)
   useEffect(() => { if (ready && mapRef.current && !GMAPID) mapRef.current.setOptions({ styles: scheme === "dark" ? DARK_STYLE : undefined }); }, [ready, scheme]);
@@ -255,7 +283,17 @@ function GoogleMapCanvas(props: MapCanvasProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, JSON.stringify(polyline ?? [])]);
 
-  if (failed) return <StaticMapCanvas {...props} />;
+  if (!GKEYS.length) return <StaticMapCanvas {...props} />;
+
+  if (failed) return (
+    <View style={{ flex: 1 }} testID="map-failed">
+      <StaticMapCanvas {...props} />
+      <Pressable testID="map-retry" onPress={retry} style={{ position: "absolute", top: spacing.md, alignSelf: "center", flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: colors.surface, borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: 8, shadowColor: "#000", shadowOpacity: 0.15, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 4 }}>
+        <Ionicons name="refresh" size={14} color={colors.brandPrimary} />
+        <Text style={{ fontFamily: fonts.medium, fontSize: 12, color: colors.onSurface }}>Mapa en modo respaldo. Reintentar interactivo</Text>
+      </Pressable>
+    </View>
+  );
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.mapTint, overflow: "hidden" }} testID="map-canvas">

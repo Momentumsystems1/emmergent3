@@ -5,6 +5,71 @@
 const SUPA = Deno.env.get("SUPABASE_URL");
 const ANON = Deno.env.get("SUPABASE_ANON_KEY");
 const MAPBOX = Deno.env.get("MAPBOX_TOKEN");
+
+// ---- Documentos legales servidos por la API (versionados aqui; sin tabla dedicada) ----
+const LEGAL_DOCS: Record<string, { title: string; version: string; status: string; body: string[] }> = {
+  terms: {
+    title: "Condiciones de uso",
+    version: "1.0",
+    status: "Vigente",
+    body: [
+      "MY CLUSTER es un servicio de ubicación y protección familiar en tiempo real que permite compartir tu posición con las personas que tú eliges, dentro de círculos privados creados y administrados por los propios usuarios.",
+      "Al crear una cuenta aceptas estas condiciones. Debes ser mayor de edad y proporcionar datos veraces. Eres responsable de mantener la confidencialidad de tu contraseña y de toda actividad realizada desde tu cuenta.",
+      "El servicio se ofrece para uso personal y familiar. No está permitido usar MY CLUSTER para vigilar a personas sin su consentimiento, para finalidades ilícitas o para cualquier uso que vulnere la privacidad de terceros.",
+      "Cada círculo es un espacio privado: solo sus miembros pueden ver la ubicación y la actividad compartida dentro de ese círculo. El creador del círculo decide quién entra y con qué permisos, y puede retirar miembros en cualquier momento.",
+      "La precisión de la ubicación depende del dispositivo, la cobertura y los sensores disponibles. MY CLUSTER muestra la mejor estimación disponible, pero no garantiza precisión absoluta en tiempo real.",
+      "MY CLUSTER no sustituye a los servicios de emergencia oficiales. El botón SOS y las alertas avisan a tus contactos elegidos; en una emergencia real contacta siempre con los servicios públicos de tu país.",
+      "Podemos mejorar, modificar o interrumpir funciones del servicio con el fin de mantenerlo seguro y actualizado. Los cambios relevantes en estas condiciones se comunicarán dentro de la app.",
+      "Momentum Systems no será responsable de daños indirectos, decisiones tomadas en base a la ubicación mostrada ni de usos del servicio contrarios a estas condiciones.",
+      "Estas condiciones se rigen por la legislación española. Para cualquier consulta puedes escribirnos desde la sección de ayuda de la app."
+    ]
+  },
+  privacy: {
+    title: "Política de privacidad",
+    version: "1.0",
+    status: "Vigente",
+    body: [
+      "Responsable del tratamiento: Momentum Systems. Esta política explica qué datos recoge MY CLUSTER, con qué finalidad y qué derechos tienes.",
+      "Datos que tratamos: identificación básica (nombre, correo), foto de perfil si la subes, tu ubicación cuando decides compartirla, los círculos a los que perteneces, tus contactos de emergencia y el historial de consentimientos que has aceptado.",
+      "Tu ubicación exacta solo se recoge cuando das permiso y decides compartirla. Puedes pausar la visibilidad en cualquier momento, de forma general o por círculo, y programar horarios en los que tu posición no es visible.",
+      "Los datos de ubicación se muestran únicamente a los miembros de tus círculos. Nunca vendemos datos personales ni compartimos tu ubicación con terceros con fines publicitarios.",
+      "Base jurídica: ejecución del contrato (prestar el servicio que pides), consentimiento (ubicación, contactos de emergencia, notificaciones) e interés legítimo (seguridad y mejora del servicio).",
+      "Conservamos los datos mientras mantengas tu cuenta. Al eliminarla, tus datos personales y tu historial de ubicación se borran de nuestros sistemas activos en el plazo legalmente establecido.",
+      "Seguridad: las comunicaciones van cifradas, las operaciones privilegiadas pasan por funciones aisladas del servidor y el acceso a tu foto y a los datos de cada círculo está controlado por políticas de permisos verificadas en cada consulta.",
+      "Derechos: puedes acceder, rectificar, suprimir, oponerte y portar tus datos, y retirar tus consentimientos cuando quieras, desde la app o escribiéndonos. También puedes reclamar ante la autoridad de control (AEPD en España).",
+      "MY CLUSTER no está dirigido a menores de 14 años. Si detectas que un menor ha creado una cuenta, escríbenos para eliminarla."
+    ]
+  },
+  security: {
+    title: "Seguridad",
+    version: "1.0",
+    status: "Vigente",
+    body: [
+      "La seguridad de tu familia empieza por la seguridad de tus datos. Este documento resume cómo protegemos MY CLUSTER.",
+      "Cifrado en tránsito: todas las comunicaciones entre la app y nuestros servidores usan HTTPS con cifrado TLS.",
+      "Aislamiento de privilegios: las operaciones sensibles (fotos, invitaciones, cambios de permisos) se ejecutan en funciones de servidor aisladas que verifican tu identidad en cada llamada. Las claves de administración nunca se incluyen en la app.",
+      "Control de acceso por círculos: cada foto, ubicación y dato de grupo se comprueba contra tu pertenencia real al círculo antes de servirse. Nadie fuera de tus círculos puede ver tus datos compartidos.",
+      "Consentimiento trazable: cada permiso que aceptas queda registrado con fecha y versión, y puedes revocarlo en cualquier momento desde tu perfil.",
+      "Mínimo exposición: solo pedimos los permisos que necesita cada función (ubicación, cámara para la foto de perfil) y explicamos para qué se usan antes de pedirlos.",
+      "Buenas prácticas para ti: usa una contraseña única, no compartas tu sesión y revisa periódicamente quién pertenece a tus círculos.",
+      "Si descubres una vulnerabilidad, repórtala de forma responsable a través de la sección de ayuda. La investigaremos y responderemos."
+    ]
+  },
+  how: {
+    title: "Cómo funciona",
+    version: "1.0",
+    status: "Vigente",
+    body: [
+      "MY CLUSTER organiza a tu gente en círculos: familia, amigos, equipo. Cada círculo tiene sus miembros y sus permisos, y todo lo que compartes dentro de un círculo solo lo ven sus miembros.",
+      "Para empezar crea un círculo, ponle nombre e invita a quien quieras. La persona invitada recibe un enlace; al aceptarlo entra en el círculo y decide qué comparte contigo.",
+      "Ubicación en vivo: con tu permiso, la app comparte tu posición con los círculos que elijas. Puedes pausarla cuando quieras o programar horarios de visibilidad.",
+      "Cercas: marca lugares (casa, trabajo, colegio) y recibe avisos cuando alguien llega o sale. La escolta te acompaña en trayectos y avisa si te desvías o no llegas a la hora prevista.",
+      "Quedadas y convoy: organiza puntos de encuentro, comparte la ruta del viaje y llega a la vez con quien viaja contigo.",
+      "Sensores: el botón SOS y las alertas de seguridad avisan a tus contactos de emergencia en situaciones críticas. Los permisos se piden justo cuando los necesitas y puedes revocarlos siempre.",
+      "Todo el control está en tu perfil: visibilidad, círculos, contacto de emergencia, documentos aceptados y cierre de sesión."
+    ]
+  }
+};
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -379,12 +444,12 @@ Deno.serve(async (req)=>{
     if (p === "/api/health") return json({
       ok: true,
       service: "sentinel-api",
-      version: "0.7.0"
+      version: "0.7.1"
     });
     if (p === "/api/system/status") return json({
       ok: true,
       service: "sentinel-api",
-      version: "0.7.0",
+      version: "0.7.1",
       providers: {
         geocoding: MAPBOX ? {
           provider: "Mapbox",
@@ -1446,6 +1511,13 @@ Deno.serve(async (req)=>{
           "Cache-Control": "private, max-age=300"
         }
       });
+    }
+    // ---- Documentos legales (publicos: se leen tambien en onboarding, antes de tener cuenta) ----
+    if (p.startsWith("/api/legal/documents/") && req.method === "GET") {
+      const key = p.split("/").pop() ?? "";
+      const doc = LEGAL_DOCS[key];
+      if (!doc) return err("NOT_FOUND", "Documento no encontrado", 404);
+      return json(doc);
     }
     return json({
       detail: {

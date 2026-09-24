@@ -4,6 +4,7 @@
 // mobility (geocode/autocomplete/history/nav-route/static.png) sobre Mapbox, planes desde tabla.
 const SUPA = Deno.env.get("SUPABASE_URL");
 const ANON = Deno.env.get("SUPABASE_ANON_KEY");
+const SVC = Deno.env.get("SENTINEL_SERVICE_KEY");
 const MAPBOX = Deno.env.get("MAPBOX_TOKEN");
 
 // ---- Documentos legales servidos por la API (versionados aqui; sin tabla dedicada) ----
@@ -183,7 +184,10 @@ async function rest(req, path, init = {}, prefer = "return=representation") {
     headers
   });
   const txt = await r.text();
-  return new Response(txt || "null", {
+  // 204/205/304 son estados sin cuerpo: construir la Response con texto lanzaria
+  // "Response with null body status cannot have body" y romperia todo DELETE con return=minimal.
+  const nullBody = r.status === 204 || r.status === 205 || r.status === 304;
+  return new Response(nullBody ? null : txt || "null", {
     status: r.status,
     headers: {
       ...CORS,
@@ -194,6 +198,31 @@ async function rest(req, path, init = {}, prefer = "return=representation") {
 async function restJ(req, path, init = {}, prefer = "return=representation") {
   const r = await rest(req, path, init, prefer);
   const body = await r.json().catch(()=>null);
+  return {
+    status: r.status,
+    body
+  };
+}
+// REST privilegiado con la service key del servidor (secreto de la funcion, nunca expuesta al cliente).
+// Solo para cascadas de administracion que la RLS del usuario no puede cubrir (p. ej. borrar un círculo
+// con datos de otros miembros: trail de ubicaciones, convoys, quedadas).
+async function restS(path, init = {}, prefer = "return=minimal") {
+  const r = await fetch(`${SUPA}/rest/v1/${path}`, {
+    ...init,
+    headers: {
+      apikey: SVC,
+      Authorization: `Bearer ${SVC}`,
+      "Content-Type": "application/json",
+      Prefer: prefer
+    }
+  });
+  const txt = await r.text();
+  let body = null;
+  try {
+    body = txt ? JSON.parse(txt) : null;
+  } catch  {
+    body = null;
+  }
   return {
     status: r.status,
     body
@@ -444,12 +473,12 @@ Deno.serve(async (req)=>{
     if (p === "/api/health") return json({
       ok: true,
       service: "sentinel-api",
-      version: "0.7.1"
+      version: "0.7.2"
     });
     if (p === "/api/system/status") return json({
       ok: true,
       service: "sentinel-api",
-      version: "0.7.1",
+      version: "0.7.2",
       providers: {
         geocoding: MAPBOX ? {
           provider: "Mapbox",
@@ -840,10 +869,52 @@ Deno.serve(async (req)=>{
     if (groupMatch && req.method === "DELETE") {
       const na = needAuth();
       if (na) return na;
-      const r = await rest(req, `groups?id=eq.${groupMatch[1]}`, {
-        method: "DELETE"
-      }, "return=minimal");
-      if (r.status >= 400) return err("FORBIDDEN", "No se pudo borrar el grupo", r.status);
+      const gid = groupMatch[1];
+      // El borrado de un círculo es una cascada privilegiada: incluye datos de otros miembros
+      // (trail de ubicaciones, convoys, quedadas) que la RLS del usuario no puede tocar.
+      // Va con la service key del servidor (secreto de esta funcion) y en orden de dependencias.
+      if (!SVC) return err("SERVICE_NOT_CONFIGURED", "Borrado de círculo no configurado en este entorno", 503);
+      // Autorizacion previa con el JWT del usuario (la cascada con service key salta la RLS:
+      // solo owner del círculo o admin activo pueden dispararla).
+      const gq = await restJ(req, `groups?id=eq.${gid}&select=owner_id`);
+      const isOwner = Array.isArray(gq.body) && gq.body[0]?.owner_id === sub;
+      const mine = await restJ(req, `group_members?group_id=eq.${gid}&user_id=eq.${sub}&status=eq.active&select=role`);
+      const role = Array.isArray(mine.body) ? mine.body[0]?.role : null;
+      if (!isOwner && !(role && [
+        "owner",
+        "admin"
+      ].includes(role))) return err("FORBIDDEN", "Solo el dueño o un administrador puede borrar el círculo", 403);
+      const pick = (r, k)=>Array.isArray(r.body) ? r.body.map((x)=>x[k]).filter(Boolean) : [];
+      const fail = (step, r)=>err("FORBIDDEN", "No se pudo borrar el grupo", r.status, `${step}: ${JSON.stringify(r.body).slice(0, 220)}`);
+      const mt = await restS(`meetings?group_id=eq.${gid}&select=id`);
+      if (mt.status >= 400) return fail("meetings-read", mt);
+      const cv = await restS(`convoys?group_id=eq.${gid}&select=id`);
+      if (cv.status >= 400) return fail("convoys-read", cv);
+      const meetingIds = pick(mt, "id"), convoyIds = pick(cv, "id");
+      if (meetingIds.length) {
+        const r = await restS(`meeting_participants?meeting_id=in.(${meetingIds.join(",")})`, { method: "DELETE" });
+        if (r.status >= 400) return fail("meeting_participants", r);
+      }
+      if (convoyIds.length) {
+        const r = await restS(`convoy_members?convoy_id=in.(${convoyIds.join(",")})`, { method: "DELETE" });
+        if (r.status >= 400) return fail("convoy_members", r);
+      }
+      for (const step of [
+        `meetings?group_id=eq.${gid}`,
+        `convoys?group_id=eq.${gid}`,
+        `zone_events?group_id=eq.${gid}`,
+        `alert_events?group_id=eq.${gid}`,
+        `location_trail?group_id=eq.${gid}`,
+        `locations?group_id=eq.${gid}`,
+        `zones?group_id=eq.${gid}`,
+        `circle_requests?group_id=eq.${gid}`,
+        `invitations?group_id=eq.${gid}`,
+        `group_members?group_id=eq.${gid}`,
+        `groups?id=eq.${gid}`
+      ]){
+        const r = await restS(step, { method: "DELETE" });
+        if (r.status >= 400) return fail(step.split("?")[0], r);
+      }
       return json({
         ok: true
       });

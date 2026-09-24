@@ -61,12 +61,24 @@ function loadGmaps(): Promise<any> {
   window.__mcGmapsPromise = (async () => {
     let lastErr: any = new Error("no gmaps keys configured");
     for (const key of GKEYS) {
-      try { return await injectGmaps(key); } catch (e) { lastErr = e; }
+      if (deadKeys.has(key)) continue; // key ya rechazada por Google en este dispositivo
+      try { const m = await injectGmaps(key); activeKey = key; return m; } catch (e) { lastErr = e; }
     }
     window.__mcGmapsPromise = undefined;
     throw lastErr;
   })();
   return window.__mcGmapsPromise;
+}
+
+// Keys que Google ha rechazado en este dispositivo (p. ej. restricción de referrer).
+const deadKeys = new Set<string>();
+let activeKey = "";
+// Limpia por completo una instancia de Google Maps fallida para poder recargar con otra key.
+function purgeGmaps() {
+  if (typeof window === "undefined") return;
+  document.querySelectorAll('script[src*="maps.googleapis.com"]').forEach((s) => s.parentNode?.removeChild(s));
+  (window as any).google = undefined;
+  window.__mcGmapsPromise = undefined;
 }
 
 const DARK_STYLE = [
@@ -124,7 +136,7 @@ function GoogleMapCanvas(props: MapCanvasProps) {
   const [failed, setFailed] = useState(false);
   const [ready, setReady] = useState(false);
   const [attempt, setAttempt] = useState(0);
-  const retry = () => { if (typeof window !== "undefined") window.__mcGmapsPromise = undefined; setFailed(false); setReady(false); setAttempt((a) => a + 1); };
+  const retry = () => { deadKeys.clear(); purgeGmaps(); setFailed(false); setReady(false); setAttempt((a) => a + 1); };
 
   const located = people.filter((p) => p.state === "shared" && p.lat != null);
   const me = located.find((p) => p.is_me);
@@ -158,6 +170,25 @@ function GoogleMapCanvas(props: MapCanvasProps) {
       trafficRef.current = new maps.TrafficLayer();
       mapRef.current = map;
       setReady(true);
+      // Si Google rechaza la key (p. ej. restricción de referrer), no lanza excepción:
+      // pinta su propio overlay "Oops! Something went wrong" dentro del contenedor.
+      // Lo detectamos y saltamos a la siguiente key; si no quedan, respaldo estático + reintento.
+      const errPoll = setInterval(() => {
+        if (dead) { clearInterval(errPoll); return; }
+        const host = hostRef.current;
+        if (host && (host.querySelector('.gm-err-message') || host.querySelector('[class*="gm-err"]'))) {
+          clearInterval(errPoll);
+          if (activeKey) deadKeys.add(activeKey);
+          purgeGmaps();
+          if (GKEYS.some((k) => !deadKeys.has(k))) {
+            setReady(false);
+            setAttempt((a) => a + 1);
+          } else {
+            setFailed(true);
+          }
+        }
+      }, 500);
+      setTimeout(() => clearInterval(errPoll), 10000);
     }).catch(() => setFailed(true));
     return () => {
       dead = true;

@@ -44,7 +44,7 @@ function MemberRow({ m, onPress }: { m: MapPerson; onPress: () => void }) {
         </View>
       </BlurCard>
       <View style={{ position: "absolute", left: 0, top: (BAR - AVATAR) / 2, width: AVATAR, height: AVATAR, borderRadius: AVATAR / 2, borderWidth: 2.5, borderColor: m.color, alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
-        <UserPhoto userId={m.user_id} name={m.name} color={m.color} size={AVATAR - 5} hasPhoto={m.has_photo} />
+        <UserPhoto userId={m.user_id} name={m.name} color={m.color} size={AVATAR - 5} hasPhoto={!!m.photo_url} />
       </View>
     </Pressable>
   );

@@ -5,7 +5,7 @@ import Ionicons from "@react-native-vector-icons/ionicons";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Animated, Image, Pressable, Text, View } from "react-native";
 
-import { BASE } from "@/src/api";
+import { api, BASE, loadTokens } from "@/src/api";
 import { incidentIcon, LatLng, MapCanvasProps, MapPerson } from "@/src/components/mapTypes";
 import { PersonAvatar } from "@/src/components/orbs";
 import { fonts, makeStyles, radius, spacing, useTheme } from "@/src/theme";
@@ -27,6 +27,38 @@ const GKEYS = [...new Set([GKEY, GKEY_FALLBACK].filter((k) => !!k))];
 // Optional vector Map ID (cloud console). With it: tilt/3D on roadmap + AdvancedMarkerElement. Without: raster roadmap (no tilt).
 const GMAPID = process.env.EXPO_PUBLIC_GOOGLE_MAP_ID ?? "";
 const FOLLOW_ZOOM = 17.5; // close follow on a person (native uses pitch3d=50 + tight zoom; mirror it on web)
+const TILT_3D = 60; // apertura "tipo Google": perspectiva 3D real (requiere mapId vectorial; sin él Google lo ignora)
+
+// Calle de cada persona (geocodificación inversa): caché global con TTL, clave por persona y rejilla ~11 m,
+// para no repetir llamadas en cada poll de posiciones (10 s).
+const streetCache = new Map<string, { t: number; s: string }>();
+const STREET_TTL = 10 * 60 * 1000;
+const streetKey = (p: MapPerson) => `${p.member_id}:${(p.lat ?? 0).toFixed(4)}:${(p.lng ?? 0).toFixed(4)}`;
+
+// CSS de los marcadores avanzados (AdvancedMarkerElement): se inyecta una sola vez en el documento.
+let mcStylesInjected = false;
+function ensureMcStyles() {
+  if (mcStylesInjected || typeof document === "undefined") return;
+  mcStylesInjected = true;
+  const css = `
+.mc-pin{display:flex;flex-direction:column;align-items:center;transform:translateY(-4px)}
+.mc-ava{width:44px;height:44px;border-radius:50%;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;overflow:hidden;background:#D93025}
+.mc-ava img{width:100%;height:100%;object-fit:cover}
+.mc-ava span{color:#fff;font:700 16px/1 "Plus Jakarta Sans",Roboto,sans-serif}
+.mc-pin--me .mc-ava{width:52px;height:52px}
+.mc-pin--me .mc-ava{border-color:#fff;box-shadow:0 0 0 4px rgba(234,67,53,.28),0 2px 8px rgba(0,0,0,.35)}
+.mc-stem{width:2px;height:6px;background:rgba(255,255,255,.92)}
+.mc-chip{margin-top:5px;background:rgba(255,255,255,.95);border-radius:9px;padding:3px 8px 4px;text-align:center;box-shadow:0 1px 6px rgba(0,0,0,.25);max-width:180px}
+.mc-name{display:block;color:#202124;font:700 11.5px/1.25 "Plus Jakarta Sans",Roboto,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mc-addr{display:block;color:#5F6368;font:600 10px/1.3 "Plus Jakarta Sans",Roboto,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mc-dark .mc-chip{background:rgba(32,33,36,.92)}
+.mc-dark .mc-name{color:#E8EAED}
+.mc-dark .mc-addr{color:#9AA0A6}`;
+  const tag = document.createElement("style");
+  tag.setAttribute("data-mc", "1");
+  tag.textContent = css;
+  document.head.appendChild(tag);
+}
 
 // ---------- Google Maps boot (no dependency: script injection + importLibrary) ----------
 declare global { interface Window { google?: any; __mcGmapsPromise?: Promise<any> } }
@@ -98,18 +130,32 @@ const DARK_STYLE = [
 // ---------- marker artwork (SVG data URIs, self-contained) ----------
 const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const initials = (name: string) => name.trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("") || "·";
-function personIcon(p: MapPerson, isMe: boolean): { url: string; scaledSize: any; anchor: any } {
+function personIcon(p: MapPerson, isMe: boolean, street?: string): { url: string; scaledSize: any; anchor: any } {
   const color = /^#[0-9a-fA-F]{6}$/.test(p.color) ? p.color : "#D93025";
   const init = esc(initials(p.name));
   const name = esc(p.name.length > 14 ? `${p.name.slice(0, 13)}…` : p.name);
+  const addr = street ? esc(street.length > 22 ? `${street.slice(0, 21)}…` : street) : "";
   const svg = isMe
     ? `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><circle cx="32" cy="32" r="30" fill="${color}" opacity="0.16"/><circle cx="32" cy="32" r="19" fill="${color}" opacity="0.32"/><circle cx="32" cy="32" r="10" fill="${color}" stroke="#ffffff" stroke-width="3.5"/></svg>`
-    : `<svg xmlns="http://www.w3.org/2000/svg" width="96" height="72"><g><circle cx="48" cy="26" r="22" fill="${color}" stroke="#ffffff" stroke-width="3"/><text x="48" y="32" font-family="Arial, sans-serif" font-size="17" font-weight="700" fill="#ffffff" text-anchor="middle">${init}</text></g><rect x="${48 - (name.length * 3.4 + 10)}" y="52" width="${name.length * 6.8 + 20}" height="17" rx="8.5" fill="#ffffff" opacity="0.94"/><text x="48" y="64.5" font-family="Arial, sans-serif" font-size="10.5" font-weight="600" fill="#202124" text-anchor="middle">${name}</text></svg>`;
+    : `<svg xmlns="http://www.w3.org/2000/svg" width="96" height="${addr ? 88 : 72}"><g><circle cx="48" cy="26" r="22" fill="${color}" stroke="#ffffff" stroke-width="3"/><text x="48" y="32" font-family="Arial, sans-serif" font-size="17" font-weight="700" fill="#ffffff" text-anchor="middle">${init}</text></g><rect x="${48 - (name.length * 3.4 + 10)}" y="52" width="${name.length * 6.8 + 20}" height="${addr ? 30 : 17}" rx="8.5" fill="#ffffff" opacity="0.94"/><text x="48" y="64.5" font-family="Arial, sans-serif" font-size="10.5" font-weight="600" fill="#202124" text-anchor="middle">${name}</text>${addr ? `<text x="48" y="77" font-family="Arial, sans-serif" font-size="9" font-weight="600" fill="#5F6368" text-anchor="middle">${addr}</text>` : ""}</svg>`;
   return {
     url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
-    scaledSize: isMe ? { width: 64, height: 64 } : { width: 96, height: 72 },
+    scaledSize: isMe ? { width: 64, height: 64 } : { width: 96, height: addr ? 88 : 72 },
     anchor: isMe ? { x: 32, y: 32 } : { x: 48, y: 28 },
   };
+}
+
+// Contenido HTML del marcador avanzado (requiere mapId vectorial): avatar con foto, nombre y calle.
+// `token` autentica la foto contra nuestro backend (mismo patrón que UserPhoto en web).
+function personHtml(p: MapPerson, street: string | undefined, token: string | null): { html: string; key: string } {
+  const color = /^#[0-9a-fA-F]{6}$/.test(p.color) ? p.color : "#D93025";
+  const photoUrl = p.photo_url && token ? `${BASE}/media/user/${p.user_id}/photo?token=${encodeURIComponent(token)}` : null;
+  const init = esc(initials(p.name));
+  const name = esc(p.name.length > 20 ? `${p.name.slice(0, 19)}…` : p.name);
+  const addr = street ? esc(street) : "";
+  const key = `${p.name}|${p.color}|${addr}|${photoUrl ? 1 : 0}|${p.is_me ? 1 : 0}`;
+  const html = `<div class="mc-pin${p.is_me ? " mc-pin--me" : ""}"><div class="mc-ava" style="background:${color}">${photoUrl ? `<img src="${photoUrl}" alt="" onerror="this.parentElement.innerHTML='<span>${init}</span>'">` : `<span>${init}</span>`}</div><div class="mc-stem"></div><div class="mc-chip"><span class="mc-name">${name}</span>${addr ? `<span class="mc-addr">${addr}</span>` : ""}</div></div>`;
+  return { html, key };
 }
 function incidentIconG(roadClosed: boolean): { url: string; scaledSize: any; anchor: any } {
   const bg = roadClosed ? "#D93025" : "#F9AB00";
@@ -138,7 +184,10 @@ function GoogleMapCanvas(props: MapCanvasProps) {
   const [failed, setFailed] = useState(false);
   const [ready, setReady] = useState(false);
   const [attempt, setAttempt] = useState(0);
-  const retry = () => { deadKeys.clear(); purgeGmaps(); setFailed(false); setReady(false); setAttempt((a) => a + 1); };
+  const [advLib, setAdvLib] = useState<any>(null); // AdvancedMarkerElement cuando hay mapId vectorial
+  const [token, setToken] = useState<string | null>(null); // JWT para las fotos de los avatares
+  const [streets, setStreets] = useState<Record<string, string>>({});
+  const retry = () => { deadKeys.clear(); purgeGmaps(); setAdvLib(null); setFailed(false); setReady(false); setAttempt((a) => a + 1); };
 
   const located = people.filter((p) => p.state === "shared" && p.lat != null);
   const me = located.find((p) => p.is_me);
@@ -147,12 +196,19 @@ function GoogleMapCanvas(props: MapCanvasProps) {
   // boot once
   useEffect(() => {
     let dead = false;
-    loadGmaps().then((maps) => {
+    loadGmaps().then(async (maps) => {
       if (dead || !hostRef.current) return;
+      ensureMcStyles();
+      loadTokens().then((t) => !dead && setToken(t?.access_token ?? null)).catch(() => {});
+      // Librería de marcadores avanzados (avatar con foto): solo con mapId vectorial.
+      if (GMAPID && maps.importLibrary) {
+        maps.importLibrary("marker").then((lib: any) => !dead && setAdvLib(lib)).catch(() => {});
+      }
       const c = center ?? fallback;
+      // Apertura "tipo Google": se crea un poco alejado y la cámara entra en 3D hacia el avatar.
       const map = new maps.Map(hostRef.current, {
         center: { lat: c.lat, lng: c.lng },
-        zoom: center ? FOLLOW_ZOOM : 12,
+        zoom: center ? 14 : 12,
         mapId: GMAPID || undefined,
         disableDefaultUI: true,
         gestureHandling: "greedy",
@@ -161,7 +217,14 @@ function GoogleMapCanvas(props: MapCanvasProps) {
         styles: !GMAPID && scheme === "dark" ? DARK_STYLE : undefined,
         backgroundColor: colors.mapTint,
       });
-      if (center) map.setTilt(45); // 3D — efectivo en vector (mapId) o satélite; ignorado en raster clásico
+      if (center) {
+        const cam: any = { center: { lat: c.lat, lng: c.lng }, zoom: FOLLOW_ZOOM, tilt: TILT_3D, heading: 0 };
+        setTimeout(() => {
+          if (dead || !mapRef.current) return;
+          if (typeof map.moveCamera === "function") map.moveCamera(cam);
+          else { map.setZoom(cam.zoom); map.setTilt(cam.tilt); if (map.setHeading) map.setHeading(cam.heading); }
+        }, 450);
+      }
       const L = listenersRef.current;
       L.push(map.addListener("click", (e: any) => onMapPress?.({ lat: e.latLng.lat(), lng: e.latLng.lng() })));
       L.push(map.addListener("dragstart", () => onUserPan?.()));
@@ -196,7 +259,7 @@ function GoogleMapCanvas(props: MapCanvasProps) {
       dead = true;
       listenersRef.current.forEach((l) => l?.remove?.());
       listenersRef.current = [];
-      markersMap.current.forEach((m) => { window.google?.maps?.event?.clearInstanceListeners?.(m); m.setMap(null); });
+      markersMap.current.forEach((m) => { window.google?.maps?.event?.clearInstanceListeners?.(m); if (typeof m.setMap === "function") m.setMap(null); else m.map = null; });
       markersMap.current.clear();
       circlesMap.current.forEach((c) => c.setMap(null));
       circlesMap.current.clear();
@@ -214,13 +277,41 @@ function GoogleMapCanvas(props: MapCanvasProps) {
   // camera follow: close 3D zoom on the followed target
   useEffect(() => {
     if (!ready || !center || !mapRef.current) return;
-    mapRef.current.panTo({ lat: center.lat, lng: center.lng });
-    mapRef.current.setZoom(FOLLOW_ZOOM);
-    mapRef.current.setTilt(45);
+    const map = mapRef.current;
+    const cam: any = { center: { lat: center.lat, lng: center.lng }, zoom: FOLLOW_ZOOM, tilt: TILT_3D };
+    if (typeof map.moveCamera === "function") map.moveCamera(cam);
+    else { map.panTo(cam.center); map.setZoom(cam.zoom); map.setTilt(cam.tilt); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, center?.lat, center?.lng, center?.key]);
   // traffic layer
   useEffect(() => { if (ready && trafficRef.current) trafficRef.current.setMap(traffic ? mapRef.current : null); }, [ready, traffic]);
+
+  // Calle de cada persona visible: geocodificación inversa con caché (1 llamada por persona y ~11 m de movimiento)
+  useEffect(() => {
+    if (!ready) return;
+    const now = Date.now();
+    const fresh: Record<string, string> = {};
+    let changed = false;
+    for (const p of located) {
+      if (p.lat == null || p.lng == null) continue;
+      const k = streetKey(p);
+      const hit = streetCache.get(k);
+      if (hit && now - hit.t < STREET_TTL) {
+        if (streets[p.member_id] !== hit.s) { fresh[p.member_id] = hit.s; changed = true; }
+        continue;
+      }
+      api<{ short?: string }>(`/mobility/reverse?lat=${p.lat}&lng=${p.lng}`)
+        .then((r) => {
+          const s = r?.short;
+          if (!s) return;
+          streetCache.set(k, { t: Date.now(), s });
+          setStreets((prev) => prev[p.member_id] === s ? prev : { ...prev, [p.member_id]: s });
+        })
+        .catch(() => {});
+    }
+    if (changed) setStreets((prev) => ({ ...prev, ...fresh }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, JSON.stringify(located.map((p) => [p.member_id, p.lat, p.lng]))]);
 
   // markers sync: create once, then setPosition/setIcon — no parpadeo ni recreación en cada poll
   useEffect(() => {
@@ -241,15 +332,42 @@ function GoogleMapCanvas(props: MapCanvasProps) {
       m.setTitle(title);
       m.setZIndex(zIndex);
     };
+    const drop = (m: any) => { window.google.maps.event.clearInstanceListeners(m); if (typeof m.setMap === "function") m.setMap(null); else m.map = null; };
+    const upsertPerson = (p: (typeof located)[number]) => {
+      const id = `person-${p.member_id}`;
+      alive.add(id);
+      const pos = { lat: p.lat!, lng: p.lng! };
+      const street = streets[p.member_id];
+      const Adv = advLib?.AdvancedMarkerElement;
+      if (Adv) {
+        // Marcador avanzado: avatar con foto + nombre + calle. Se recrea solo cuando cambia su contenido.
+        const { html, key } = personHtml(p, street, token);
+        const fullKey = `${key}|${scheme}`;
+        let m = markersMap.current.get(id);
+        if (m && m.__mcKey === fullKey) { m.position = pos; return; }
+        if (m) drop(m);
+        ensureMcStyles();
+        const wrap = document.createElement("div");
+        wrap.innerHTML = html;
+        const rootEl = wrap.firstElementChild as HTMLElement;
+        if (scheme === "dark") rootEl?.classList.add("mc-dark");
+        m = new Adv({ map: mapRef.current, position: pos, content: rootEl, zIndex: p.is_me ? 4 : 3, title: p.name, gmpClickable: true });
+        m.__mcKey = fullKey;
+        m.addListener?.("click", () => onPersonPress?.(p));
+        markersMap.current.set(id, m);
+        return;
+      }
+      upsert(id, pos, personIcon(p, !!p.is_me, street), p.name, p.is_me ? 4 : 3, () => onPersonPress?.(p));
+    };
     incidents.forEach((i) => upsert(`inc-${i.id}`, { lat: i.lat, lng: i.lng }, incidentIconG(!!i.road_closed), i.title ?? "", 2, () => onIncidentPress?.(i)));
-    located.forEach((p) => upsert(`person-${p.member_id}`, { lat: p.lat!, lng: p.lng! }, personIcon(p, !!p.is_me), p.name, p.is_me ? 4 : 3, () => onPersonPress?.(p)));
+    located.forEach(upsertPerson);
     pins.forEach((p) => upsert(`pin-${p.id}`, { lat: p.lat, lng: p.lng }, pinIcon(p.color ?? colors.brandPrimary), p.title ?? "", 2, undefined));
     if (selected) upsert("selected", { lat: selected.lat, lng: selected.lng }, pinIcon(colors.brandPrimary), "", 5, undefined);
     markersMap.current.forEach((m, id) => {
-      if (!alive.has(id)) { window.google.maps.event.clearInstanceListeners(m); m.setMap(null); markersMap.current.delete(id); }
+      if (!alive.has(id)) { drop(m); markersMap.current.delete(id); }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, JSON.stringify(located.map((p) => [p.member_id, p.lat, p.lng, p.color, p.name])), JSON.stringify(incidents.map((i) => [i.id, i.lat, i.lng])), JSON.stringify(pins.map((p) => [p.id, p.lat, p.lng])), selected?.lat, selected?.lng, scheme]);
+  }, [ready, advLib, token, scheme, JSON.stringify(streets), JSON.stringify(located.map((p) => [p.member_id, p.lat, p.lng, p.color, p.name, p.photo_url])), JSON.stringify(incidents.map((i) => [i.id, i.lat, i.lng])), JSON.stringify(pins.map((p) => [p.id, p.lat, p.lng])), selected?.lat, selected?.lng]);
 
   // cercas: círculos translúcidos de marca (diff por id; el radio solo cambia al crearla)
   // + etiqueta con el nombre sobre el círculo; las ocupadas pulsan (efecto aparte, abajo)

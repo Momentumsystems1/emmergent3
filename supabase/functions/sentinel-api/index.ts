@@ -359,6 +359,32 @@ async function mbGeocode(q, lat, lng, limit = 5) {
     return out;
   });
 }
+async function mbReverse(lat, lng) {
+  const u = new URL(`https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json`);
+  u.searchParams.set("access_token", MAPBOX);
+  u.searchParams.set("language", "es");
+  u.searchParams.set("limit", "1");
+  u.searchParams.set("types", "address");
+  const r = await fetch(u);
+  if (!r.ok) return null;
+  const d = await r.json();
+  const f = (d.features ?? [])[0];
+  if (!f) return null;
+  const ctx = Object.fromEntries((f.context ?? []).map((c)=>[
+      c.id.split(".")[0],
+      c.text
+    ]));
+  const short = [
+    f.text ?? "",
+    f.address ?? ""
+  ].filter(Boolean).join(" ");
+  return {
+    short: short || f.place_name,
+    full: f.place_name,
+    neighborhood: ctx.neighborhood ?? ctx.locality ?? undefined,
+    municipality: ctx.place ?? ctx.municipality ?? undefined
+  };
+}
 function polyEncode(coords) {
   let out = "", plat = 0, plng = 0;
   const enc = (v)=>{
@@ -473,12 +499,12 @@ Deno.serve(async (req)=>{
     if (p === "/api/health") return json({
       ok: true,
       service: "sentinel-api",
-      version: "0.7.2"
+      version: "0.7.3"
     });
     if (p === "/api/system/status") return json({
       ok: true,
       service: "sentinel-api",
-      version: "0.7.2",
+      version: "0.7.3",
       providers: {
         geocoding: MAPBOX ? {
           provider: "Mapbox",
@@ -932,13 +958,14 @@ Deno.serve(async (req)=>{
       const na = needAuth();
       if (na) return na;
       const gid = posMatch[1];
-      const r = await restJ(req, `locations?group_id=eq.${gid}&select=user_id,lat,lng,accuracy,battery,updated_at,profile:profiles(display_name,avatar_color)`);
+      const r = await restJ(req, `locations?group_id=eq.${gid}&select=user_id,lat,lng,accuracy,battery,updated_at,profile:profiles(display_name,avatar_color,photo_url)`);
       const rows = r.status >= 400 ? [] : Array.isArray(r.body) ? r.body : [];
       return json(rows.map((l)=>({
           member_id: l.user_id,
           user_id: l.user_id,
           name: l.profile?.display_name ?? "Miembro",
           color: l.profile?.avatar_color ?? "#64748B",
+          photo_url: l.profile?.photo_url ?? null,
           state: l.lat != null && l.lng != null ? "shared" : "hidden",
           lat: l.lat,
           lng: l.lng,
@@ -1362,6 +1389,16 @@ Deno.serve(async (req)=>{
       const la = url.searchParams.get("lat"), ln = url.searchParams.get("lng");
       const out = await mbGeocode(q.trim(), la ? Number(la) : null, ln ? Number(ln) : null, 6).catch(()=>null);
       if (!out) return err("UPSTREAM", "El servicio de búsqueda no respondió", 502);
+      return json(out);
+    }
+    if (p === "/api/mobility/reverse" && req.method === "GET") {
+      const na = needAuth();
+      if (na) return na;
+      if (!MAPBOX) return err("SERVICE_NOT_CONFIGURED", "Geocodificación inversa no configurada", 503);
+      const la = Number(url.searchParams.get("lat")), ln = Number(url.searchParams.get("lng"));
+      if (!Number.isFinite(la) || !Number.isFinite(ln) || Math.abs(la) > 90 || Math.abs(ln) > 180) return err("BAD_REQUEST", "Coordenadas no válidas", 400);
+      const out = await mbReverse(la, ln).catch(()=>null);
+      if (!out) return err("UPSTREAM", "El servicio de geocodificación inversa no respondió", 502);
       return json(out);
     }
     if (p === "/api/mobility/history" && req.method === "GET") {

@@ -48,7 +48,7 @@ export function MemberToolsSheet({ member, mePos, groupId, onClose, onFocus }: {
         <BlurCard style={{ padding: spacing.md }} testID="member-tools-sheet">
           <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
             <View style={{ width: 46, height: 46, borderRadius: 23, borderWidth: 2.5, borderColor: member.color, overflow: "hidden" }}>
-              <UserPhoto userId={member.user_id} name={member.name} color={member.color} size={41} hasPhoto={member.has_photo} />
+              <UserPhoto userId={member.user_id} name={member.name} color={member.color} size={41} hasPhoto={!!member.photo_url} />
             </View>
             <View style={{ flex: 1 }}>
               <T weight="bold" style={{ fontSize: 16, color: BLUR_TEXT }} numberOfLines={1}>{member.name}</T>

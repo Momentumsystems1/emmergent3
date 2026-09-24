@@ -47,7 +47,9 @@ function injectGmaps(key: string, timeoutMs = 20000): Promise<any> {
     s.onerror = () => done(new Error("gmaps script error"));
     s.onload = () => {
       poll = setInterval(() => {
-        if (window.google?.maps) done();
+        // Con loading=async, window.google.maps aparece antes de que exista la
+        // clase Map: no dar por buena la API hasta que el constructor esté disponible.
+        if (window.google?.maps?.Map) done();
         else if (++polls > 100) done(new Error("gmaps not present")); // ~10s de gracia tras onload
       }, 100);
     };
@@ -56,7 +58,7 @@ function injectGmaps(key: string, timeoutMs = 20000): Promise<any> {
 }
 function loadGmaps(): Promise<any> {
   if (typeof window === "undefined") return Promise.reject(new Error("no window"));
-  if (window.google?.maps) return Promise.resolve(window.google.maps);
+  if (window.google?.maps?.Map) return Promise.resolve(window.google.maps);
   if (window.__mcGmapsPromise) return window.__mcGmapsPromise;
   window.__mcGmapsPromise = (async () => {
     let lastErr: any = new Error("no gmaps keys configured");

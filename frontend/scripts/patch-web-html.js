@@ -116,6 +116,9 @@ const manifest = {
   ],
 };
 fs.writeFileSync(path.join(dist, "manifest.json"), JSON.stringify(manifest, null, 2));
+// GitHub Pages sirve el sitio con Jekyll si falta este archivo; Jekyll EXCLUYE rutas
+// con guion bajo (_expo/) y node_modules/ del build → el bundle principal 404 y pantalla en blanco.
+fs.writeFileSync(path.join(dist, ".nojekyll"), "");
 const pwaDir = path.join(__dirname, "..", "assets", "images", "pwa");
 for (const f of ["apple-touch-icon.png", "icon-192.png", "icon-512.png"]) {
   fs.copyFileSync(path.join(pwaDir, f), path.join(dist, f));

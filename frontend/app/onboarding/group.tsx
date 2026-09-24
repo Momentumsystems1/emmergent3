@@ -10,6 +10,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { api, unavailableOf } from "@/src/api";
 import { useAuth } from "@/src/auth";
 import { InviteOptions } from "@/src/components/InviteOptions";
+import { OrbitalComposer } from "@/src/components/OrbitalComposer";
 import { OrbitalField } from "@/src/components/OrbitalField";
 import { AddMemberSheet, MemberInfo, MemberSheet, NewInvite } from "@/src/components/sheets";
 import { Button, Pill, showUnavailable, T, toast } from "@/src/components/ui";
@@ -26,7 +27,6 @@ const confirm = (title: string, msg: string, onOk: () => void) => {
 export default function GroupOnboarding({ embedded }: { embedded?: boolean }) {
   const router = useRouter(); const qc = useQueryClient(); const { user, reload } = useAuth();
   const s = useStyles(); const { colors } = useTheme(); const insets = useSafeAreaInsets(); const { width } = useWindowDimensions();
-  const [newName, setNewName] = useState("");
   const [adding, setAdding] = useState<Group | null>(null);
   const [selected, setSelected] = useState<{ gid: string; mid: string } | null>(null);
   const [finishing, setFinishing] = useState(false);
@@ -50,7 +50,7 @@ export default function GroupOnboarding({ embedded }: { embedded?: boolean }) {
     });
   }, [groups.data]);
   const onErr = (e: any) => { const u = unavailableOf(e); if (u) showUnavailable(u); else toast(e.message, "error"); };
-  const create = useMutation({ mutationFn: (name: string) => api<Group>("/groups", { method: "POST", json: { name } }), onSuccess: (g) => { setNewName(""); qc.invalidateQueries({ queryKey: ["groups"] }); setFormingId(g.id); setTimeout(() => setFormingId(null), 1400); }, onError: onErr });
+  const create = useMutation({ mutationFn: (name: string) => api<Group>("/groups", { method: "POST", json: { name } }), onSuccess: (g) => { setFormingId(g.id); setTimeout(() => setFormingId(null), 1600); }, onError: onErr });
   const rename = useMutation({ mutationFn: ({ id, name }: { id: string; name: string }) => api(`/groups/${id}`, { method: "PATCH", json: { name } }), onSuccess: () => qc.invalidateQueries({ queryKey: ["groups"] }), onError: onErr });
   const remove = useMutation({ mutationFn: (id: string) => api(`/groups/${id}`, { method: "DELETE" }), onSuccess: () => { toast("Grupo borrado", "success"); qc.invalidateQueries({ queryKey: ["groups"] }); }, onError: onErr });
   const invite = useMutation({ mutationFn: ({ g, v }: { g: Group; v: NewInvite }) => api(`/groups/${g.id}/invitations`, { method: "POST", json: v }), onSuccess: () => { setAdding(null); qc.invalidateQueries({ queryKey: ["groups"] }); }, onError: (e) => { setAdding(null); onErr(e); } });
@@ -78,13 +78,14 @@ export default function GroupOnboarding({ embedded }: { embedded?: boolean }) {
         {list.map((g) => <GroupCard key={g.id} g={g} me={user?.id} width={width} phase={formingId === g.id ? "forming" : "editing"} newMemberIds={newMemberIds} onRename={(name) => rename.mutate({ id: g.id, name })} onDelete={() => confirm("Borrar grupo", `Se eliminará "${g.name}" y sus invitaciones.`, () => remove.mutate(g.id))}
           onAdd={() => setAdding(g)} onMember={(m) => setSelected({ gid: g.id, mid: m.id })} onChanged={() => qc.invalidateQueries({ queryKey: ["groups"] })} />)}
 
-        <View style={s.newCard} testID="new-group-card">
-          <T weight="bold">{list.length ? "Crear otro grupo" : "Crea tu primer grupo"}</T>
-          <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: spacing.sm }}>
-            <TextInput testID="new-group-name" style={s.input} placeholder={list.length ? "Nombre del grupo (p. ej. Amigos)" : "Nombre del grupo (p. ej. Familia)"} placeholderTextColor={colors.muted} value={newName} onChangeText={setNewName} returnKeyType="done" onSubmitEditing={() => newName.trim() && create.mutate(newName.trim())} />
-            <Pressable testID="new-group-create" onPress={() => create.mutate(newName.trim() || `Grupo ${list.length + 1}`)} disabled={create.isPending} style={s.addBtn}><Ionicons name="add" size={22} color={colors.onBrandPrimary} /></Pressable>
-          </View>
-        </View>
+        <OrbitalComposer
+          testID="new-group-card"
+          size={Math.min(width - spacing.xl * 2 - spacing.md * 2, 240)}
+          hint={list.length ? "Crear otro círculo" : "Crea tu primer círculo"}
+          embedded={embedded}
+          onCreate={(n) => create.mutateAsync(n)}
+          onDone={() => qc.invalidateQueries({ queryKey: ["groups"] })}
+        />
       </ScrollView>
 
       {!embedded ? (

@@ -136,18 +136,20 @@ export default function SensorsScreen() {
             </View>
             {step === "idle" ? (
               <>
-                <T style={{ fontSize: 12.5, color: colors.muted, marginTop: spacing.sm }}>Ajustamos el punto de reposo del acelerómetro y comprobamos que el giroscopio responde. Mejora la detección de conducción y las migas de pan.</T>
+                <T style={{ fontSize: 12.5, color: colors.muted, marginTop: spacing.sm }}>Ajustamos el punto de reposo del acelerómetro y comprobamos que el giroscopio responde. La baseline queda guardada solo en este dispositivo.</T>
                 <View style={{ marginTop: spacing.md }}><Button small testID="calib-start" title="Empezar calibración" icon="options" onPress={() => { if (needsPermission) { toast("Primero activa los sensores", "error"); return; } samples.current = []; gyroMoved.current = false; setStep("flat"); }} /></View>
               </>
             ) : null}
             {step === "flat" ? (
               <Animated.View entering={FadeInDown} style={{ marginTop: spacing.sm }}>
                 <CalibStep n={1} title="Móvil quieto y plano" text="Déjalo sobre una mesa 3 segundos. Capturando la gravedad en reposo…" progress={Math.min(1, samples.current.length / 10)} live={gNow != null ? `${gNow.toFixed(2)} m/s²` : "esperando…"} />
+                <View style={{ marginTop: spacing.sm }}><Button small testID="calib-cancel" title="Cancelar" variant="ghost" onPress={() => { samples.current = []; gyroMoved.current = false; setStep("idle"); }} /></View>
               </Animated.View>
             ) : null}
             {step === "eight" ? (
               <Animated.View entering={FadeInDown} style={{ marginTop: spacing.sm }}>
                 <CalibStep n={2} title="Dibuja un 8 en el aire" text="Coge el móvil y traza un ochо grande dos veces. Detectaremos el giro…" progress={gyroMoved.current ? 0.6 : 0.15} live={gyroNow != null ? `${gyroNow.toFixed(0)} °/s` : "esperando…"} />
+                <View style={{ marginTop: spacing.sm }}><Button small testID="calib-cancel" title="Cancelar" variant="ghost" onPress={() => { samples.current = []; gyroMoved.current = false; setStep("idle"); }} /></View>
               </Animated.View>
             ) : null}
             {step === "done" ? (

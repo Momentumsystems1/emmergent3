@@ -8,7 +8,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAuth } from "@/src/auth";
 import { Button, Card, Header, Pill, T, toast } from "@/src/components/ui";
-import { fetchGroups } from "@/src/groups";
+import { fetchGroups, fetchGroupMembers } from "@/src/groups";
 import { deleteZone, fetchZoneEvents, fetchZones, setZoneActive, ZONE_KIND } from "@/src/zones";
 import { makeStyles, radius, spacing, useTheme } from "@/src/theme";
 
@@ -25,6 +25,7 @@ export default function FencesScreen() {
   const canManage = group?.my_role === "owner" || group?.my_role === "admin";
 
   const zones = useQuery({ queryKey: ["zones", group?.id], enabled: !!group, queryFn: () => fetchZones(group.id) });
+  const membersQ = useQuery({ queryKey: ["group-members", group?.id], enabled: !!group, queryFn: () => fetchGroupMembers(group.id) });
   const events = useQuery({ queryKey: ["zone-events", group?.id], enabled: !!group, queryFn: () => fetchZoneEvents(group.id) });
 
   const toggle = useMutation({
@@ -40,7 +41,7 @@ export default function FencesScreen() {
 
   const nameOf = (uid: string) => {
     if (uid === user?.id) return "Tú";
-    const m = (group?.members ?? []).find((x: any) => x.user_id === uid);
+    const m = (membersQ.data ?? []).find((x: any) => x.user_id === uid);
     return m?.display_name ?? "Un miembro";
   };
 
@@ -52,7 +53,7 @@ export default function FencesScreen() {
           <View style={{ flexDirection: "row", gap: spacing.md, alignItems: "center" }}>
             <View style={s.introIcon}><Ionicons name="radio-button-on" size={22} color={colors.brandPrimary} /></View>
             <T style={{ flex: 1, fontSize: 12.5, color: colors.muted }}>
-              Avisos automáticos cuando alguien de tu grupo entra o sale de una zona. Solo el administrador crea o edita cercas; el grupo solo ve el aviso, nunca el historial ajeno.
+              Avisos cuando alguien entra o sale. El administrador decide para quién es cada cerca y quién recibe el aviso: nunca se notifica a todo el grupo.
             </T>
           </View>
         </Card>
@@ -101,7 +102,10 @@ export default function FencesScreen() {
                 />
               </View>
               {canManage ? (
-                <PressableRow testID={`zone-delete-${z.id}`} label="Eliminar cerca" onPress={() => remove.mutate(z.id)} />
+                <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: spacing.sm, alignItems: "center" }}>
+                  <Button small testID={`zone-edit-${z.id}`} title="Editar" variant="secondary" icon="create" onPress={() => router.push({ pathname: "/fences/new", params: { group: group.id, zone: z.id } })} />
+                  <PressableRow testID={`zone-delete-${z.id}`} label="Eliminar cerca" onPress={() => remove.mutate(z.id)} />
+                </View>
               ) : null}
             </Card>
           );
@@ -110,7 +114,7 @@ export default function FencesScreen() {
         {zones.isSuccess && group && zones.data!.length === 0 ? (
           <Card style={{ padding: spacing.lg, gap: 6 }}>
             <T weight="semibold" style={{ fontSize: 15 }}>Aún no hay cercas</T>
-            <T style={{ fontSize: 12.5, color: colors.muted }}>Crea la primera (casa, trabajo, colegio…) y el grupo recibirá avisos de entradas y salidas. También puedes mantener pulsado un punto del mapa y tocar “Cerca”.</T>
+            <T style={{ fontSize: 12.5, color: colors.muted }}>Crea la primera (casa, trabajo, colegio…) con el deslizador de diámetro sobre el mapa y elige quién recibe el aviso. También puedes mantener pulsado un punto del mapa y tocar “Cerca”.</T>
           </Card>
         ) : null}
 

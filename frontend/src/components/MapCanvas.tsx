@@ -2,7 +2,7 @@
 import Ionicons from "@react-native-vector-icons/ionicons";
 import React, { useEffect, useRef } from "react";
 import { View } from "react-native";
-import MapView, { Marker, Polyline, UrlTile } from "react-native-maps";
+import MapView, { Circle, Marker, Polyline, UrlTile } from "react-native-maps";
 
 import { BASE } from "@/src/api";
 import { PersonAvatar } from "@/src/components/orbs";
@@ -28,7 +28,7 @@ const LIGHT_STYLE = [
   { featureType: "poi", stylers: [{ visibility: "off" }] },
 ];
 
-export function MapCanvas({ people, pins = [], polyline, onPersonPress, center, zoomDelta = 0.01, onMapPress, onMapLongPress, onUserPan, selected, traffic, incidents = [], onIncidentPress, pitch3d = 50 }: MapCanvasProps) {
+export function MapCanvas({ people, pins = [], polyline, circles = [], draftCircle, onPersonPress, center, zoomDelta = 0.01, onMapPress, onMapLongPress, onUserPan, selected, traffic, incidents = [], onIncidentPress, pitch3d = 50 }: MapCanvasProps) {
   const { scheme, colors } = useTheme();
   const ref = useRef<MapView>(null);
   const tiles = `${BASE}/mobility/tiles`;
@@ -71,6 +71,18 @@ export function MapCanvas({ people, pins = [], polyline, onPersonPress, center, 
           </Marker>
         ))}
         {pins.map((p) => <Marker key={p.id} coordinate={{ latitude: p.lat, longitude: p.lng }} title={p.title} pinColor={p.color ?? colors.brandSecondary} />)}
+        {/* Cercas del grupo: círculo translúcido + borde; el borrador de cerca en edición va encima en azul */}
+        {circles.map((z) => (
+          <Circle key={z.id} center={{ latitude: z.lat, longitude: z.lng }} radius={z.radius_m}
+            strokeColor={z.active === false ? "rgba(120,130,140,0.7)" : (z.occupied ? "rgba(22,163,74,0.9)" : "rgba(225,29,72,0.85)")}
+            fillColor={z.active === false ? "rgba(120,130,140,0.08)" : (z.occupied ? "rgba(22,163,74,0.10)" : "rgba(225,29,72,0.10)")}
+            strokeWidth={2} testID={`map-zone-${z.id}`} />
+        ))}
+        {draftCircle ? (
+          <Circle center={{ latitude: draftCircle.lat, longitude: draftCircle.lng }} radius={draftCircle.radius_m}
+            strokeColor={draftCircle.color ?? "#1A73E8"} fillColor="rgba(26,115,232,0.14)" strokeWidth={2.5}
+            testID="map-draft-circle" />
+        ) : null}
         {selected ? <Marker coordinate={{ latitude: selected.lat, longitude: selected.lng }} pinColor={colors.brandPrimary} testID="map-selected-pin" /> : null}
         {polyline && polyline.length > 1 ? <Polyline coordinates={polyline.map(([lat, lng]) => ({ latitude: lat, longitude: lng }))} strokeColor={colors.brandSecondary} strokeWidth={4} /> : null}
       </MapView>

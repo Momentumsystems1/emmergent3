@@ -35,7 +35,7 @@ import { fonts, makeStyles, radius, spacing, useTheme } from "@/src/theme";
 import { storage } from "@/src/utils/storage";
 import { fetchGroups } from "@/src/groups";
 import { fetchActiveConvoy } from "@/src/convoys";
-import { fetchZones, insertZoneEvent, insideZone } from "@/src/zones";
+import { fetchZones, insertZoneEvent, insideZone, zoneWatchesUser } from "@/src/zones";
 import { recordTrailPoint } from "@/src/co2";
 
 const distM = (a: LatLng, b: LatLng) => { const R = 6371000, dLat = ((b.lat - a.lat) * Math.PI) / 180, dLng = ((b.lng - a.lng) * Math.PI) / 180; const h = Math.sin(dLat / 2) ** 2 + Math.cos((a.lat * Math.PI) / 180) * Math.cos((b.lat * Math.PI) / 180) * Math.sin(dLng / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(h)); };
@@ -138,7 +138,8 @@ export default function MapHome() {
   const zoneState = useRef<Record<string, boolean>>({});
   useEffect(() => {
     if (!mePos || !zones.data?.length || !user?.id || !group?.id) return;
-    for (const z of zones.data.filter((x) => x.is_active)) {
+    // Solo evalúo las cercas que me conciernen: el administrador las define "para quién" es cada una.
+    for (const z of zones.data.filter((x) => x.is_active && zoneWatchesUser(x, user.id))) {
       const now = insideZone(mePos, z);
       const before = zoneState.current[z.id];
       if (before === undefined) { zoneState.current[z.id] = now; continue; } // primera lectura: siembra sin avisar

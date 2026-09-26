@@ -28,6 +28,10 @@ const GKEYS = [...new Set([GKEY, GKEY_FALLBACK].filter((k) => !!k))];
 const GMAPID = process.env.EXPO_PUBLIC_GOOGLE_MAP_ID ?? "";
 const FOLLOW_ZOOM = 17.5; // close follow on a person (native uses pitch3d=50 + tight zoom; mirror it on web)
 const TILT_3D = 60; // apertura "tipo Google": perspectiva 3D real (requiere mapId vectorial; sin él Google lo ignora)
+// Sin mapId el roadmap raster ignora tilt; el modo híbrido sí admite imagen a 45° (3D real
+// donde hay cobertura, p. ej. Madrid). Con mapId todo vuelve a vectorial automáticamente.
+const TILT_EFF = GMAPID ? TILT_3D : 45;
+const FOLLOW_ZOOM_EFF = GMAPID ? FOLLOW_ZOOM : 18.5;
 
 // Calle de cada persona (geocodificación inversa): caché global con TTL, clave por persona y rejilla ~11 m,
 // para no repetir llamadas en cada poll de posiciones (10 s).
@@ -58,6 +62,45 @@ function ensureMcStyles() {
   tag.setAttribute("data-mc", "1");
   tag.textContent = css;
   document.head.appendChild(tag);
+}
+
+// ---------- marcador HTML propio (avatar con foto) cuando no hay mapId vectorial ----------
+// Mismo contenido que el AdvancedMarkerElement (personHtml) sobre un OverlayView:
+// anclado abajo-centro como un pin, clicable, sin dependencias externas.
+function createHtmlMarkerCtor(): any {
+  const OV = window.google!.maps.OverlayView;
+  return class HtmlMarker extends OV {
+    html: string; pos: any; z: number; dark: boolean; click?: () => void; el: HTMLElement | null = null;
+    constructor(opts: { map: any; position: any; html: string; zIndex?: number; dark?: boolean; onClick?: () => void }) {
+      super();
+      this.html = opts.html; this.pos = opts.position; this.z = opts.zIndex ?? 3;
+      this.dark = !!opts.dark; this.click = opts.onClick;
+      this.setMap(opts.map);
+    }
+    onAdd() {
+      const el = document.createElement("div");
+      el.style.position = "absolute";
+      el.style.transform = "translate(-50%, -100%)";
+      el.style.zIndex = String(this.z);
+      el.style.cursor = "pointer";
+      el.innerHTML = this.html;
+      if (this.dark) (el.firstElementChild as HTMLElement | null)?.classList.add("mc-dark");
+      if (this.click) el.addEventListener("click", (ev) => { ev.stopPropagation(); this.click?.(); });
+      this.el = el;
+      this.getPanes()!.overlayMouseTarget.appendChild(el);
+      this.draw();
+    }
+    draw() {
+      if (!this.el) return;
+      const pr = this.getProjection(); if (!pr) return;
+      const px = pr.fromLatLngToDivPixel(this.pos);
+      if (!px) return;
+      this.el.style.left = `${px.x}px`;
+      this.el.style.top = `${px.y}px`;
+    }
+    onRemove() { this.el?.parentElement?.removeChild(this.el); this.el = null; }
+    setPosition(pos: any) { this.pos = pos; this.draw(); }
+  };
 }
 
 // ---------- Google Maps boot (no dependency: script injection + importLibrary) ----------
@@ -170,7 +213,7 @@ function pinIcon(color: string): { url: string; scaledSize: any; anchor: any } {
 
 // ---------- interactive Google canvas ----------
 function GoogleMapCanvas(props: MapCanvasProps) {
-  const { people, pins = [], polyline, circles = [], onPersonPress, center, zoomDelta = 0.01, onMapPress, onMapLongPress, onUserPan, selected, traffic, incidents = [], onIncidentPress } = props;
+  const { people, pins = [], polyline, circles = [], draftCircle, onPersonPress, center, zoomDelta = 0.01, onMapPress, onMapLongPress, onUserPan, selected, traffic, incidents = [], onIncidentPress } = props;
   const { colors, scheme } = useTheme();
   const hostRef = useRef<any>(null);
   const mapRef = useRef<any>(null);
@@ -210,7 +253,16 @@ function GoogleMapCanvas(props: MapCanvasProps) {
         center: { lat: c.lat, lng: c.lng },
         zoom: center ? 14 : 12,
         mapId: GMAPID || undefined,
-        disableDefaultUI: true,
+        mapTypeId: GMAPID ? "roadmap" : "hybrid",
+        tilt: center ? TILT_EFF : 0,
+        // Interfaz de navegación de Google visible (lo pagamos): zoom, pegman y brújula;
+        // se ocultan solo el selector de tipo de mapa y el botón de pantalla completa.
+        disableDefaultUI: false,
+        zoomControl: true,
+        streetViewControl: true,
+        rotateControl: true,
+        mapTypeControl: false,
+        fullscreenControl: false,
         gestureHandling: "greedy",
         clickableIcons: false,
         // mapId switches styling to cloud-based; only pass inline styles without it
@@ -218,7 +270,7 @@ function GoogleMapCanvas(props: MapCanvasProps) {
         backgroundColor: colors.mapTint,
       });
       if (center) {
-        const cam: any = { center: { lat: c.lat, lng: c.lng }, zoom: FOLLOW_ZOOM, tilt: TILT_3D, heading: 0 };
+        const cam: any = { center: { lat: c.lat, lng: c.lng }, zoom: FOLLOW_ZOOM_EFF, tilt: TILT_EFF, heading: 0 };
         setTimeout(() => {
           if (dead || !mapRef.current) return;
           if (typeof map.moveCamera === "function") map.moveCamera(cam);
@@ -278,13 +330,51 @@ function GoogleMapCanvas(props: MapCanvasProps) {
   useEffect(() => {
     if (!ready || !center || !mapRef.current) return;
     const map = mapRef.current;
-    const cam: any = { center: { lat: center.lat, lng: center.lng }, zoom: FOLLOW_ZOOM, tilt: TILT_3D };
+    const cam: any = { center: { lat: center.lat, lng: center.lng }, zoom: FOLLOW_ZOOM_EFF, tilt: TILT_EFF };
     if (typeof map.moveCamera === "function") map.moveCamera(cam);
     else { map.panTo(cam.center); map.setZoom(cam.zoom); map.setTilt(cam.tilt); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, center?.lat, center?.lng, center?.key]);
   // traffic layer
   useEffect(() => { if (ready && trafficRef.current) trafficRef.current.setMap(traffic ? mapRef.current : null); }, [ready, traffic]);
+
+  // Verificación del 3D: si tras el arranque la inclinación no se aplicó (p. ej. Map ID
+  // sin soporte vectorial en esta sesión), se reintenta con setTilt cuando el mapa esté inactivo.
+  useEffect(() => {
+    if (!ready || !mapRef.current) return;
+    const map = mapRef.current;
+    const check = setInterval(() => {
+      if (document.hidden || !mapRef.current) return;
+      try {
+        const t = typeof map.getTilt === "function" ? map.getTilt() : 0;
+        if (t < 45 && typeof map.setTilt === "function") map.setTilt(TILT_EFF);
+      } catch { /* API no expone getTilt aún */ }
+    }, 3000);
+    const stop = setTimeout(() => clearInterval(check), 15000);
+    return () => { clearInterval(check); clearTimeout(stop); };
+  }, [ready, attempt]);
+
+  // Círculo en edición (borrador de cerca): crece/mueve en tiempo real con el deslizador.
+  const draftRef = useRef<any>(null);
+  useEffect(() => {
+    if (!ready || !mapRef.current || typeof window === "undefined" || !window.google?.maps?.Circle) return;
+    if (!draftCircle) { draftRef.current?.setMap?.(null); draftRef.current = null; return; }
+    const col = draftCircle.color ?? "#1A73E8";
+    if (!draftRef.current) {
+      draftRef.current = new window.google.maps.Circle({
+        map: mapRef.current,
+        center: { lat: draftCircle.lat, lng: draftCircle.lng },
+        radius: draftCircle.radius_m,
+        strokeColor: col, strokeOpacity: 0.95, strokeWeight: 2.5,
+        fillColor: col, fillOpacity: 0.14, clickable: false,
+      });
+    } else {
+      draftRef.current.setCenter({ lat: draftCircle.lat, lng: draftCircle.lng });
+      draftRef.current.setRadius(draftCircle.radius_m);
+      draftRef.current.setOptions({ strokeColor: col, fillColor: col });
+    }
+  }, [ready, draftCircle?.lat, draftCircle?.lng, draftCircle?.radius_m, draftCircle?.color]);
+  useEffect(() => () => { draftRef.current?.setMap?.(null); draftRef.current = null; }, []);
 
   // Calle de cada persona visible: geocodificación inversa con caché (1 llamada por persona y ~11 m de movimiento)
   useEffect(() => {
@@ -357,7 +447,17 @@ function GoogleMapCanvas(props: MapCanvasProps) {
         markersMap.current.set(id, m);
         return;
       }
-      upsert(id, pos, personIcon(p, !!p.is_me, street), p.name, p.is_me ? 4 : 3, () => onPersonPress?.(p));
+      // Sin mapId: mismo avatar (foto + nombre + calle) con el marcador HTML propio.
+      const { html, key } = personHtml(p, street, token);
+      const fullKey = `${key}|${scheme}|html`;
+      let hm = markersMap.current.get(id);
+      if (hm && hm.__mcKey === fullKey) { hm.setPosition(pos); return; }
+      if (hm) drop(hm);
+      ensureMcStyles();
+      const HM = createHtmlMarkerCtor();
+      hm = new HM({ map: mapRef.current, position: pos, html, zIndex: p.is_me ? 4 : 3, dark: scheme === "dark", onClick: () => onPersonPress?.(p) });
+      hm.__mcKey = fullKey;
+      markersMap.current.set(id, hm);
     };
     incidents.forEach((i) => upsert(`inc-${i.id}`, { lat: i.lat, lng: i.lng }, incidentIconG(!!i.road_closed), i.title ?? "", 2, () => onIncidentPress?.(i)));
     located.forEach(upsertPerson);
@@ -477,7 +577,7 @@ function FenceRing({ occupied, stroke, style, children }: { occupied: boolean; s
   );
 }
 const zoomForS = zoomFor;
-function StaticMapCanvas({ people, pins = [], polyline, circles = [], onPersonPress, center, zoomDelta = 0.01, onMapPress, onMapLongPress, selected, incidents = [], onIncidentPress }: MapCanvasProps) {
+function StaticMapCanvas({ people, pins = [], polyline, circles = [], draftCircle, onPersonPress, center, zoomDelta = 0.01, onMapPress, onMapLongPress, selected, incidents = [], onIncidentPress }: MapCanvasProps) {
   const s = useStyles();
   const { colors, scheme } = useTheme();
   const [size, setSize] = useState({ w: 0, h: 0 });
@@ -520,6 +620,19 @@ function StaticMapCanvas({ people, pins = [], polyline, circles = [], onPersonPr
           </FenceRing>
         );
       })}
+      {/* borrador de cerca en edición: crece en tiempo real con el deslizador */}
+      {draftCircle ? (() => {
+        const p = proj(draftCircle.lat, draftCircle.lng);
+        const mpp = (156543.03392 * Math.cos((draftCircle.lat * Math.PI) / 180)) / 2 ** z;
+        const rpx = draftCircle.radius_m / mpp;
+        if (p.left + rpx < -40 || p.left - rpx > size.w + 40 || p.top + rpx < -40 || p.top - rpx > size.h + 40) return null;
+        return (
+          <View pointerEvents="none" testID="map-draft-circle"
+            style={[s.abs, { left: p.left - rpx, top: p.top - rpx, width: rpx * 2, height: rpx * 2, borderRadius: rpx, borderWidth: 2.5, borderColor: draftCircle.color ?? "#1A73E8", backgroundColor: "rgba(26,115,232,0.14)" }]}>
+            {rpx > 34 ? <Text style={[s.pinTxt, { marginTop: 6 }]}>Nueva cerca</Text> : null}
+          </View>
+        );
+      })() : null}
       {incidents.filter((i) => inView(i.lat, i.lng)).map((i) => (
         <Pressable key={i.id} testID={`map-incident-${i.id}`} onPress={() => onIncidentPress?.(i)} style={[s.abs, proj(i.lat, i.lng), { marginLeft: -13, marginTop: -13 }]}>
           <View style={[s.inc, { backgroundColor: i.road_closed ? colors.error : colors.warning }]}><Ionicons name={incidentIcon(i) as any} size={14} color={i.road_closed ? colors.onError : colors.onWarning} /></View>

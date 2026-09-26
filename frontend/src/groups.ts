@@ -24,3 +24,11 @@ export async function fetchGroups(): Promise<NormalizedGroup[]> {
   const list = await api<any[]>("/groups");
   return (list ?? []).map(normalizeGroup);
 }
+
+// Miembros activos de un grupo (con nombre para mostrar). /api/groups no incluye la nómina;
+// el detalle /api/groups/{id} sí: members[].user_id + display_name (join con profiles en el servidor).
+export type GroupMember = { user_id: string; display_name?: string; role?: string; status?: string };
+export async function fetchGroupMembers(groupId: string): Promise<GroupMember[]> {
+  const g = await api<any>(`/groups/${groupId}`);
+  return (g?.members ?? []).filter((m: any) => m.status === "active" && m.user_id);
+}

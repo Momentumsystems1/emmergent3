@@ -73,7 +73,7 @@ const LEGAL_DOCS: Record<string, { title: string; version: string; status: strin
 };
 const CORS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-api-key, x-device-key",
   "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS"
 };
 const CATALOG = [
@@ -484,6 +484,126 @@ async function mbStatic(lat, lng, zoom, w, h, dark, pins, path) {
     }
   });
 }
+// ---- FMS Integration (v8): sandbox de eventos normalizados para clientes privados ----
+// Auth por claves de API (clientes) y device keys (nodos fisicos). Las claves viajan solo
+// en cabeceras; aqui se guarda y se compara su SHA-256. Las tablas fms_* tienen RLS sin
+// policies: solo esta funcion (service key) las toca.
+async function sha256Hex(s) {
+  const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
+  return [
+    ...new Uint8Array(d)
+  ].map((b)=>b.toString(16).padStart(2, "0")).join("");
+}
+async function hmacSha256Hex(secret, msg) {
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), {
+    name: "HMAC",
+    hash: "SHA-256"
+  }, false, [
+    "sign"
+  ]);
+  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(msg));
+  return [
+    ...new Uint8Array(sig)
+  ].map((b)=>b.toString(16).padStart(2, "0")).join("");
+}
+async function fmsClient(req) {
+  const key = req.headers.get("x-api-key");
+  if (!key) return {
+    error: err("UNAUTHORIZED", "Falta la cabecera X-API-Key", 401)
+  };
+  const h = await sha256Hex(key);
+  const r = await restS(`fms_clients?api_key_hash=eq.${h}&status=eq.active&select=id,name,status`, {}, "return=representation");
+  const row = Array.isArray(r.body) ? r.body[0] : null;
+  if (!row) return {
+    error: err("UNAUTHORIZED", "API key no valida o suspendida", 401)
+  };
+  return {
+    client: row
+  };
+}
+async function fmsDevice(req) {
+  const key = req.headers.get("x-device-key");
+  if (!key) return {
+    error: err("UNAUTHORIZED", "Falta la cabecera X-Device-Key", 401)
+  };
+  const h = await sha256Hex(key);
+  const r = await restS(`fms_devices?device_key_hash=eq.${h}&select=id,label,imei,client_id`, {}, "return=representation");
+  const row = Array.isArray(r.body) ? r.body[0] : null;
+  if (!row) return {
+    error: err("UNAUTHORIZED", "Device key no valida", 401)
+  };
+  return {
+    device: row
+  };
+}
+function fmsNormalize(ev, device) {
+  return {
+    id: ev.id,
+    device_id: ev.device_id,
+    device_label: device?.label ?? null,
+    imei: device?.imei ?? null,
+    event_type: ev.event_type,
+    latitude: ev.latitude,
+    longitude: ev.longitude,
+    occurred_at: ev.occurred_at,
+    received_at: ev.received_at,
+    status: ev.status,
+    priority: ev.priority,
+    payload: ev.payload ?? {}
+  };
+}
+const FMS_EVENT_TYPES = new Set([
+  "v16_activated",
+  "v16_deactivated",
+  "v16_test",
+  "sos",
+  "generic"
+]);
+async function fmsDeliver(ev) {
+  const hooks = await restS("fms_webhooks?active=eq.true&select=id,url,secret", {}, "return=representation");
+  const list = Array.isArray(hooks.body) ? hooks.body : [];
+  const body = JSON.stringify(ev);
+  const results = [];
+  for (const w of list){
+    const sig = await hmacSha256Hex(w.secret, body);
+    let status = null, ok = false, errorText = null;
+    try {
+      const ctrl = new AbortController();
+      const t = setTimeout(()=>ctrl.abort(), 5000);
+      const r = await fetch(w.url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-FMS-Event-Id": String(ev.id),
+          "X-FMS-Signature": `sha256=${sig}`
+        },
+        body,
+        signal: ctrl.signal
+      });
+      clearTimeout(t);
+      status = r.status;
+      ok = r.ok;
+    } catch (e) {
+      errorText = String(e).slice(0, 300);
+    }
+    await restS("fms_deliveries", {
+      method: "POST",
+      body: JSON.stringify({
+        webhook_id: w.id,
+        event_id: ev.id,
+        status_code: status,
+        ok,
+        error: errorText
+      })
+    });
+    results.push({
+      webhook_id: w.id,
+      ok,
+      status_code: status
+    });
+  }
+  return results;
+}
 const UUID_RE = "([0-9a-fA-F-]{36})";
 Deno.serve(async (req)=>{
   if (req.method === "OPTIONS") return new Response(null, {
@@ -499,12 +619,12 @@ Deno.serve(async (req)=>{
     if (p === "/api/health") return json({
       ok: true,
       service: "sentinel-api",
-      version: "0.7.3"
+      version: "0.8.0"
     });
     if (p === "/api/system/status") return json({
       ok: true,
       service: "sentinel-api",
-      version: "0.7.3",
+      version: "0.8.0",
       providers: {
         geocoding: MAPBOX ? {
           provider: "Mapbox",
@@ -1618,6 +1738,134 @@ Deno.serve(async (req)=>{
           "Content-Type": obj.headers.get("Content-Type") ?? "image/jpeg",
           "Cache-Control": "private, max-age=300"
         }
+      });
+    }
+    // ---- FMS Integration: rutas del sandbox ----
+    if (p === "/api/fms/schema" && req.method === "GET") {
+      return json({
+        service: "fms-integration",
+        note: "Esquema del evento normalizado. Autenticacion: clientes con X-API-Key, nodos fisicos con X-Device-Key.",
+        event: {
+          id: "bigint, asignado por la plataforma",
+          device_id: "uuid del nodo registrado",
+          device_label: "texto, ej. Instaflash G001",
+          imei: "texto opcional",
+          event_type: [
+            ...FMS_EVENT_TYPES
+          ],
+          latitude: "number, -90..90",
+          longitude: "number, -180..180",
+          occurred_at: "ISO 8601 UTC del activado en el dispositivo",
+          received_at: "ISO 8601 UTC de recepcion en plataforma",
+          status: "open | acknowledged | resolved",
+          priority: "low | normal | high | critical",
+          payload: "objeto libre (opcional)"
+        }
+      });
+    }
+    if (p === "/api/fms/ingest" && req.method === "POST") {
+      const fd = await fmsDevice(req);
+      if (fd.error) return fd.error;
+      const b = await req.json().catch(()=>({}));
+      if (!FMS_EVENT_TYPES.has(b.event_type)) return err("BAD_REQUEST", "event_type no valido", 400);
+      if (typeof b.latitude !== "number" || typeof b.longitude !== "number") return err("BAD_REQUEST", "Faltan latitude/longitude", 400);
+      if (b.latitude < -90 || b.latitude > 90 || b.longitude < -180 || b.longitude > 180) return err("BAD_REQUEST", "Coordenadas fuera de rango", 400);
+      const occurredAt = b.occurred_at && !Number.isNaN(Date.parse(b.occurred_at)) ? new Date(b.occurred_at).toISOString() : new Date().toISOString();
+      const priority = [
+        "low",
+        "normal",
+        "high",
+        "critical"
+      ].includes(b.priority) ? b.priority : "normal";
+      const ins = await restS("fms_events", {
+        method: "POST",
+        body: JSON.stringify({
+          device_id: fd.device.id,
+          event_type: b.event_type,
+          latitude: b.latitude,
+          longitude: b.longitude,
+          occurred_at: occurredAt,
+          status: "open",
+          priority,
+          payload: b.payload && typeof b.payload === "object" && !Array.isArray(b.payload) ? b.payload : {}
+        })
+      }, "return=representation");
+      const ev = Array.isArray(ins.body) ? ins.body[0] : null;
+      if (!ev) return err("INTERNAL", "No se pudo registrar el evento", 500);
+      const normalized = fmsNormalize(ev, fd.device);
+      const deliveries = await fmsDeliver(normalized);
+      return json({
+        received: true,
+        event: normalized,
+        deliveries
+      }, 201);
+    }
+    if (p === "/api/fms/events" && req.method === "GET") {
+      const fc = await fmsClient(req);
+      if (fc.error) return fc.error;
+      const limit = Math.min(Math.max(parseInt(url.searchParams.get("limit") ?? "50", 10) || 50, 1), 200);
+      const since = url.searchParams.get("since");
+      let q = `fms_events?select=*&order=received_at.desc&limit=${limit}`;
+      if (since && !Number.isNaN(Date.parse(since))) q += `&received_at=gte.${encodeURIComponent(new Date(since).toISOString())}`;
+      const r = await restS(q, {}, "return=representation");
+      const rows = Array.isArray(r.body) ? r.body : [];
+      const devIds = [
+        ...new Set(rows.map((e)=>e.device_id))
+      ];
+      const devs = devIds.length ? await restS(`fms_devices?id=in.(${devIds.join(",")})&select=id,label,imei`, {}, "return=representation") : {
+        body: []
+      };
+      const dmap = new Map((Array.isArray(devs.body) ? devs.body : []).map((d)=>[
+        d.id,
+        d
+      ]));
+      return json({
+        client: fc.client.name,
+        count: rows.length,
+        events: rows.map((e)=>fmsNormalize(e, dmap.get(e.device_id)))
+      });
+    }
+    if (p === "/api/fms/webhooks" && req.method === "GET") {
+      const fc = await fmsClient(req);
+      if (fc.error) return fc.error;
+      const r = await restS(`fms_webhooks?client_id=eq.${fc.client.id}&select=id,url,active,created_at&order=created_at.desc`, {}, "return=representation");
+      return json({
+        webhooks: Array.isArray(r.body) ? r.body : []
+      });
+    }
+    if (p === "/api/fms/webhooks" && req.method === "POST") {
+      const fc = await fmsClient(req);
+      if (fc.error) return fc.error;
+      const b = await req.json().catch(()=>({}));
+      const u = String(b.url ?? "").trim();
+      if (!u.startsWith("https://")) return err("BAD_REQUEST", "La URL del webhook debe ser https://", 400);
+      const secret = (crypto.randomUUID() + crypto.randomUUID()).replace(/-/g, "");
+      const ins = await restS("fms_webhooks", {
+        method: "POST",
+        body: JSON.stringify({
+          client_id: fc.client.id,
+          url: u,
+          secret
+        })
+      }, "return=representation");
+      const w = Array.isArray(ins.body) ? ins.body[0] : null;
+      if (!w) return err("INTERNAL", "No se pudo crear el webhook", 500);
+      return json({
+        id: w.id,
+        url: w.url,
+        secret,
+        note: "Guarda este secret ahora: no se volvera a mostrar. Firma: X-FMS-Signature: sha256=<HMAC-SHA256 del cuerpo con el secret>."
+      }, 201);
+    }
+    const whDel = p.match(/^\/api\/fms\/webhooks\/([0-9a-fA-F-]{36})$/);
+    if (whDel && req.method === "DELETE") {
+      const fc = await fmsClient(req);
+      if (fc.error) return fc.error;
+      await restS(`fms_webhooks?id=eq.${whDel[1]}&client_id=eq.${fc.client.id}`, {
+        method: "DELETE"
+      });
+      return json({
+        ok: true
       });
     }
     // ---- Documentos legales (publicos: se leen tambien en onboarding, antes de tener cuenta) ----

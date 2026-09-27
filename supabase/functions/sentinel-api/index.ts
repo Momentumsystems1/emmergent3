@@ -56,6 +56,25 @@ const LEGAL_DOCS: Record<string, { title: string; version: string; status: strin
       "Si descubres una vulnerabilidad, repórtala de forma responsable a través de la sección de ayuda. La investigaremos y responderemos."
     ]
   },
+  location: {
+    title: "Compartir tu ubicación",
+    version: "1.0",
+    status: "Vigente",
+    body: [
+      "MY CLUSTER es un servicio de ubicación familiar en tiempo real organizado en círculos privados. Compartir tu ubicación significa que la app envía tu posición a nuestros servidores y la muestra en el mapa a los miembros de los círculos donde tú has decidido ser visible. Ninguna ubicación se comparte sin que actives el permiso correspondiente.",
+      "Qué datos se comparten exactamente: tu posición en el mapa (latitud, longitud y precisión del GPS), tu nombre y foto de perfil, la calle aproximada donde estás, el estado de movimiento (parado / en movimiento / en ruta, con velocidad aproximada) y la batería de tu dispositivo. No se comparte el contenido de tus comunicaciones, tu lista de contactos del teléfono ni ningún dato ajeno a estas categorías.",
+      "Quién puede verlo: únicamente las personas que pertenecen a tus círculos, y solo mientras mantengas la visibilidad activa en ese círculo. Tu posición nunca es pública: ninguna persona fuera de tus círculos, ningún buscador y ningún tercero con fines publicitarios puede acceder a ella. Momentum Systems no vende ni cede datos de ubicación.",
+      "Cuándo se comparte: solo cuando has concedido el permiso de ubicación del sistema y además tienes la visibilidad activada. Puedes pausar tu visibilidad en cualquier momento, de forma general o por círculo, y la pausa es efectiva de inmediato: el resto deja de verte en el mapa. Tú decides si compartes tu ubicación exacta o solo una zona aproximada.",
+      "Control granular por categoría: en el alta y desde tu perfil puedes activar o desactivar por separado la ubicación actual, la zona aproximada, las rutas e historial, la hora estimada de llegada, el estado de movimiento, el modo de transporte, las alertas de seguridad, el estado del dispositivo, la baliza V16 y las métricas de uso. Desactivar una categoría no afecta a las demás.",
+      "Cuánto tiempo se conserva: tu posición en vivo se sustituye por la más reciente. El historial de trayectos se usa únicamente para las funciones que lo necesitan (cercas, convoy, rutas) y se conserva el tiempo mínimo necesario para prestarlas. Al eliminar tu cuenta, tu historial de ubicación y tus datos personales se borran de nuestros sistemas activos conforme a la política de privacidad.",
+      "La excepción de seguridad: si pulsas SOS, tu posición en ese momento se envía como alerta a tus círculos y contactos de emergencia, incluso si tu visibilidad estaba en pausa. Es la única situación en la que una alerta comparte tu ubicación sin visibilidad activa. MY CLUSTER no sustituye a los servicios oficiales de emergencia (112).",
+      "Cómo dejar de compartir: tres formas, todas inmediatas. Pausar la visibilidad desde la app (general o por círculo); retirar el permiso de ubicación en los ajustes de tu dispositivo; o eliminar tu cuenta, que además borra tus datos e historial. Si abandonas un círculo, sus miembros dejan de verte al instante.",
+      "Base jurídica y tus derechos: la ubicación se trata sobre la base de tu consentimiento (art. 6.1.a RGPD), que puedes retirar en cualquier momento con los mismos medios con que lo diste, sin que ello afecte a la licitud del tratamiento anterior. Conservamos un registro de tus consentimientos con fecha y versión. Puedes ejercer tus derechos de acceso, rectificación, supresión, oposición, limitación y portabilidad desde la app o escribiéndonos, y reclamar ante la AEPD (www.aepd.es).",
+      "Menores: MY CLUSTER no está dirigido a menores de 14 años. Las cuentas de menores deben ser creadas y supervisadas por su madre, padre o tutor, que es quien gestiona los permisos de ubicación del menor.",
+      "Seguridad del dato: tu posición viaja cifrada (TLS), se almacena con control de acceso verificado en cada consulta (las políticas comprueban tu pertenencia real a cada círculo antes de servir cualquier dato) y las claves de administración nunca están en la app. Nadie puede ver la ubicación de un círculo al que no pertenece, ni siquiera conociendo el enlace.",
+      "Cambios y contacto: si esta información cambia de forma relevante lo avisaremos dentro de la app y te pediremos de nuevo el consentimiento si fuera necesario. Para cualquier duda sobre tu ubicación y privacidad, sección de ayuda de la app."
+    ]
+  },
   how: {
     title: "Cómo funciona",
     version: "1.0",

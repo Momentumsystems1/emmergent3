@@ -4,7 +4,8 @@
 // ============================================================
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { Switch, View } from "react-native";
+import { Pressable, Switch, View } from "react-native";
+import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api } from "@/src/api";
@@ -23,6 +24,7 @@ export default function Privacy() {
   const { colors } = useTheme();
   const qc = useQueryClient();
   const [flipped, setFlipped] = useState(false);
+  const router = useRouter();
   const catalog = useQuery({ queryKey: ["perm-catalog"], queryFn: () => api<Cat[]>("/permissions/catalog") });
   const perms = useQuery({ queryKey: ["permissions"], queryFn: fetchPermissionsRecord });
   const history = useQuery({ queryKey: ["perm-history"], queryFn: () => api<any[]>("/permissions/history") });
@@ -76,6 +78,14 @@ export default function Privacy() {
       {hist.length === 0 ? <T style={{ color: colors.muted, fontSize: 12 }}>Sin cambios registrados</T> : null}
       {hist.slice(0, 30).map((h) => <View key={h.id} testID="history-row"><StreamLine ts={hhmm(h.created_at)} key_={h.granted ? "GRANT" : "REVOKE"} value={`${h.key} · ${h.scope}${h.reason ? ` · ${h.reason}` : ""}`} ok={h.granted} /></View>)}
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 18 }}><StatusDot active={activeCount > 0} /><T style={{ fontSize: 11, color: colors.muted }}>{activeCount > 0 ? "COMPARTIENDO" : "SIN COMPARTIR"} · v1.0.0</T></View>
+      <CardDivider />
+      <Pressable testID="privacy-location-doc" onPress={() => router.push("/legal/location")} style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 10 }}>
+        <View style={{ flex: 1 }}>
+          <T weight="semibold" style={{ fontSize: 13.5 }}>Compartir tu ubicación</T>
+          <T style={{ fontSize: 11, color: colors.muted }}>Qué compartes, quién lo ve y cómo pararlo · información legal</T>
+        </View>
+        <T style={{ fontSize: 15, color: colors.brandPrimary }}>→</T>
+      </Pressable>
     </>
   );
 

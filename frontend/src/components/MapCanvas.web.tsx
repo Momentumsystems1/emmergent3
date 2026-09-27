@@ -6,6 +6,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Animated, Image, Pressable, Text, View } from "react-native";
 
 import { api, BASE, loadTokens } from "@/src/api";
+import { MapLibreCanvas } from "@/src/components/MapCanvasLibre.web";
 import { incidentIcon, LatLng, MapCanvasProps, MapPerson } from "@/src/components/mapTypes";
 import { PersonAvatar } from "@/src/components/orbs";
 import { fonts, makeStyles, radius, spacing, useTheme } from "@/src/theme";
@@ -41,7 +42,7 @@ const streetKey = (p: MapPerson) => `${p.member_id}:${(p.lat ?? 0).toFixed(4)}:$
 
 // CSS de los marcadores avanzados (AdvancedMarkerElement): se inyecta una sola vez en el documento.
 let mcStylesInjected = false;
-function ensureMcStyles() {
+export function ensureMcStyles() {
   if (mcStylesInjected || typeof document === "undefined") return;
   mcStylesInjected = true;
   const css = `
@@ -190,7 +191,7 @@ function personIcon(p: MapPerson, isMe: boolean, street?: string): { url: string
 
 // Contenido HTML del marcador avanzado (requiere mapId vectorial): avatar con foto, nombre y calle.
 // `token` autentica la foto contra nuestro backend (mismo patrón que UserPhoto en web).
-function personHtml(p: MapPerson, street: string | undefined, token: string | null): { html: string; key: string } {
+export function personHtml(p: MapPerson, street: string | undefined, token: string | null): { html: string; key: string } {
   const color = /^#[0-9a-fA-F]{6}$/.test(p.color) ? p.color : "#D93025";
   const photoUrl = p.photo_url && token ? `${BASE}/media/user/${p.user_id}/photo?token=${encodeURIComponent(token)}` : null;
   const init = esc(initials(p.name));
@@ -577,7 +578,7 @@ function FenceRing({ occupied, stroke, style, children }: { occupied: boolean; s
   );
 }
 const zoomForS = zoomFor;
-function StaticMapCanvas({ people, pins = [], polyline, circles = [], draftCircle, onPersonPress, center, zoomDelta = 0.01, onMapPress, onMapLongPress, selected, incidents = [], onIncidentPress }: MapCanvasProps) {
+export function StaticMapCanvas({ people, pins = [], polyline, circles = [], draftCircle, onPersonPress, center, zoomDelta = 0.01, onMapPress, onMapLongPress, selected, incidents = [], onIncidentPress }: MapCanvasProps) {
   const s = useStyles();
   const { colors, scheme } = useTheme();
   const [size, setSize] = useState({ w: 0, h: 0 });
@@ -654,8 +655,12 @@ function StaticMapCanvas({ people, pins = [], polyline, circles = [], draftCircl
 }
 
 export function MapCanvas(props: MapCanvasProps) {
-  if (!GKEY) return <StaticMapCanvas {...props} />;
-  return <GoogleMapCanvas {...props} />;
+  // Renderer web por defecto: MapLibre + teselas libres (OpenFreeMap/OSM) — sin claves ni
+  // restricciones de referrer, con 3D real (pitch 60 + edificios). El renderer de Google
+  // solo se activa cuando exista un Map ID vectorial configurado (consola de Google),
+  // que es el único caso en el que aporta algo que MapLibre no tenga.
+  if (GKEY && GMAPID) return <GoogleMapCanvas {...props} />;
+  return <MapLibreCanvas {...props} />;
 }
 
 const useStyles = makeStyles((c) => ({

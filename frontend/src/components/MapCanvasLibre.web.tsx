@@ -20,6 +20,79 @@ const STYLE_URL = "https://tiles.openfreemap.org/styles/dark";
 const FOLLOW_ZOOM = 18.5; // zoom alto de seguimiento (hito: avatar centrado y cercano)
 const PITCH_3D = 60; // perspectiva 3D tipo navegador
 const FALLBACK_CENTER = { lat: 40.4168, lng: -3.7038 }; // Puerta del Sol
+// Modo conducción: zoom se interpola con la velocidad y la cámara mira hacia el rumbo.
+const DRIVE_ZOOM = 15.2; // zoom a velocidad alta (más horizonte)
+const DRIVE_SPEED_MAX = 100; // km/h a los que se alcanza DRIVE_ZOOM
+const DRIVE_SPEED_MIN = 10; // por debajo no se considera conducción
+const DRIVE_LOOKAHEAD_Y = 120; // px de ventaja hacia delante (el avatar queda bajo el centro)
+// Anclaje inteligente del toque: POI con nombre o proyección sobre la calle más cercana.
+const SNAP_PX = 26; // radio de búsqueda de establecimientos alrededor del toque
+const SNAP_ROAD_MAX_M = 60; // distancia máxima para anclar a una calle
+
+// Proyección equirectangular local (metros) suficiente para distancias de anclaje.
+function toMeters(lat: number, lng: number, ref: LatLng): [number, number] {
+  const cosLat = Math.cos((ref.lat * Math.PI) / 180);
+  return [(lng - ref.lng) * 111320 * cosLat, (lat - ref.lat) * 110540];
+}
+function fromMeters(x: number, y: number, ref: LatLng): LatLng {
+  const cosLat = Math.cos((ref.lat * Math.PI) / 180);
+  return { lat: ref.lat + y / 110540, lng: ref.lng + x / (111320 * cosLat) };
+}
+
+/** Ancla un toque al lugar más lógico: establecimiento con nombre cercano o punto sobre la calle más próxima. */
+function snapToLogicalPlace(map: any, e: any): LatLng {
+  const tap: LatLng = { lat: e.lngLat.lat, lng: e.lngLat.lng };
+  try {
+    const bbox: [[number, number], [number, number]] = [
+      [e.point.x - SNAP_PX, e.point.y - SNAP_PX],
+      [e.point.x + SNAP_PX, e.point.y + SNAP_PX],
+    ];
+    const feats: any[] = map.queryRenderedFeatures(bbox).filter((f: any) => f.sourceLayer);
+    // 1) Establecimiento (feature puntual con nombre) más cercano al toque.
+    let bestPoi: { d: number; lat: number; lng: number } | null = null;
+    for (const f of feats) {
+      if (f.geometry?.type !== "Point" || !f.properties?.name) continue;
+      const [lng, lat] = f.geometry.coordinates;
+      const p = map.project([lng, lat]);
+      const d = Math.hypot(p.x - e.point.x, p.y - e.point.y);
+      if (!bestPoi || d < bestPoi.d) bestPoi = { d, lat, lng };
+    }
+    if (bestPoi) return { lat: bestPoi.lat, lng: bestPoi.lng };
+    // 2) Proyección sobre el segmento de calle más cercano (el toque es el origen local).
+    let bestRoad: { d: number; x: number; y: number } | null = null;
+    for (const f of feats) {
+      const g = f.geometry;
+      if (g?.type !== "LineString" && g?.type !== "MultiLineString") continue;
+      const lines = g.type === "LineString" ? [g.coordinates] : g.coordinates;
+      for (const line of lines) {
+        for (let i = 0; i < line.length - 1; i++) {
+          const [ax, ay] = toMeters(line[i][1], line[i][0], tap);
+          const [bx, by] = toMeters(line[i + 1][1], line[i + 1][0], tap);
+          const dx = bx - ax, dy = by - ay;
+          const len2 = dx * dx + dy * dy;
+          const t = len2 > 0 ? Math.max(0, Math.min(1, (-ax * dx - ay * dy) / len2)) : 0;
+          const px = ax + t * dx, py = ay + t * dy;
+          const d = Math.hypot(px, py);
+          if (!bestRoad || d < bestRoad.d) bestRoad = { d, x: px, y: py };
+        }
+      }
+    }
+    if (bestRoad && bestRoad.d <= SNAP_ROAD_MAX_M) {
+      return fromMeters(bestRoad.x, bestRoad.y, tap);
+    }
+  } catch { /* sin capas vectoriales aún: se devuelve el toque tal cual */ }
+  return tap;
+}
+
+/** Estilos del cono de visión (modo conducción): triángulo translúcido sobre el avatar propio. */
+let coneStylesDone = false;
+function ensureConeStyles() {
+  if (coneStylesDone || typeof document === "undefined") return;
+  coneStylesDone = true;
+  const st = document.createElement("style");
+  st.textContent = `.mc-cone-wrap{position:relative}.mc-cone{position:absolute;left:50%;top:-34px;transform:translateX(-50%);width:0;height:0;border-left:13px solid transparent;border-right:13px solid transparent;border-bottom:34px solid rgba(26,115,232,.35);pointer-events:none}`;
+  document.head.appendChild(st);
+}
 
 declare global { interface Window { maplibregl?: any; __mcMlPromise?: Promise<any> } }
 
@@ -87,7 +160,7 @@ const streetKey = (p: MapPerson) => `${p.member_id}:${(p.lat ?? 0).toFixed(4)}:$
 export function MapLibreCanvas(props: MapCanvasProps) {
   const {
     people, pins = [], polyline, circles = [], draftCircle,
-    onPersonPress, center, onMapPress, onMapLongPress, onUserPan,
+    onPersonPress, center, onMapPress, onMapLongPress, onCirclePress, drive, onUserPan,
     selected, incidents = [], onIncidentPress,
   } = props;
   const { colors, scheme } = useTheme();
@@ -101,6 +174,10 @@ export function MapLibreCanvas(props: MapCanvasProps) {
   const [streets, setStreets] = useState<Record<string, string>>({});
   const pulsePhase = useRef(0);
   const located = people.filter((p) => p.lat != null && p.lng != null);
+
+  // Refresco de handlers: el boot corre una sola vez, pero los handlers deben ver siempre el render actual.
+  const handlersRef = useRef({ onMapPress, onMapLongPress, onCirclePress, onUserPan, circles });
+  handlersRef.current = { onMapPress, onMapLongPress, onCirclePress, onUserPan, circles };
 
   // ---- boot (una vez) ----
   useEffect(() => {
@@ -136,9 +213,21 @@ export function MapLibreCanvas(props: MapCanvasProps) {
             }, 350);
           }
         });
-        map.on("click", (e: any) => onMapPress?.({ lat: e.lngLat.lat, lng: e.lngLat.lng }));
-        map.on("dragstart", () => onUserPan?.());
-        map.on("mousedown", (e: any) => { lpTimer = setTimeout(() => onMapLongPress?.({ lat: e.lngLat.lat, lng: e.lngLat.lng }), 550); });
+        map.on("click", (e: any) => {
+          const h = handlersRef.current;
+          // 1) ¿Toque sobre una cerca? → vista brújula del círculo (y no se planta pin).
+          try {
+            if (mapRef.current?.getLayer("mc-circles-fill")) {
+              const hit = map.queryRenderedFeatures(e.point, { layers: ["mc-circles-fill"] });
+              const c = hit?.length ? h.circles.find((x) => x.id === (hit[0].properties as any)?.id) : undefined;
+              if (c && h.onCirclePress) { h.onCirclePress(c); return; }
+            }
+          } catch { /* capa aún no lista: sigue el flujo normal */ }
+          // 2) Toque normal: se ancla al lugar más lógico (establecimiento o calle).
+          h.onMapPress?.(snapToLogicalPlace(map, e));
+        });
+        map.on("dragstart", () => handlersRef.current.onUserPan?.());
+        map.on("mousedown", (e: any) => { lpTimer = setTimeout(() => handlersRef.current.onMapLongPress?.({ lat: e.lngLat.lat, lng: e.lngLat.lng }), 550); });
         ["mouseup", "dragstart"].forEach((ev) => map.on(ev, () => clearTimeout(lpTimer)));
         map.on("error", () => { /* errores puntuales de tesela: MapLibre reintenta solo */ });
       })
@@ -156,12 +245,23 @@ export function MapLibreCanvas(props: MapCanvasProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ---- cámara de seguimiento: zoom alto + pitch 3D sobre el objetivo ----
+  // ---- cámara de seguimiento: zoom alto + pitch 3D; en conducción, rumbo y zoom por velocidad ----
   useEffect(() => {
     if (!ready || !center || !mapRef.current) return;
-    mapRef.current.easeTo({ center: [center.lng, center.lat], zoom: FOLLOW_ZOOM, pitch: PITCH_3D, duration: 900 });
+    const spd = drive?.speedKmh ?? null;
+    const driving = drive != null && spd != null && spd > DRIVE_SPEED_MIN;
+    if (driving) {
+      // A más velocidad, más lejos (más horizonte); el rumbo gira el mapa (heading-up).
+      const f = Math.min(1, Math.max(0, (spd! - 0) / DRIVE_SPEED_MAX));
+      const zoom = FOLLOW_ZOOM + (DRIVE_ZOOM - FOLLOW_ZOOM) * f;
+      const opts: any = { center: [center.lng, center.lat], zoom, pitch: PITCH_3D, duration: 900, offset: [0, DRIVE_LOOKAHEAD_Y] };
+      if (drive!.heading != null) opts.bearing = drive!.heading;
+      mapRef.current.easeTo(opts);
+    } else {
+      mapRef.current.easeTo({ center: [center.lng, center.lat], zoom: FOLLOW_ZOOM, pitch: PITCH_3D, duration: 900, offset: [0, 0] });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, center?.lat, center?.lng, center?.key]);
+  }, [ready, center?.lat, center?.lng, center?.key, drive?.speedKmh, drive?.heading]);
 
   // ---- calle de cada persona (geocodificación inversa con caché) ----
   useEffect(() => {
@@ -193,6 +293,7 @@ export function MapLibreCanvas(props: MapCanvasProps) {
     const ml = window.maplibregl;
     const map = mapRef.current;
     const alive = new Set<string>();
+    ensureConeStyles();
 
     const upsertHtml = (id: string, lng: number, lat: number, html: string, key: string, onClick?: () => void) => {
       alive.add(id);
@@ -212,7 +313,10 @@ export function MapLibreCanvas(props: MapCanvasProps) {
 
     located.forEach((p) => {
       const { html, key } = personHtml(p, streets[p.member_id], token);
-      upsertHtml(`person-${p.member_id}`, p.lng!, p.lat!, html, `${key}|${scheme}`, () => onPersonPress?.(p));
+      // En conducción, mi avatar lleva un cono de visión (el mapa gira al rumbo → el cono siempre apunta "arriba").
+      const drivingMe = p.is_me && drive?.heading != null && (drive?.speedKmh ?? 0) > DRIVE_SPEED_MIN;
+      const finalHtml = drivingMe ? `<div class="mc-cone-wrap"><div class="mc-cone"></div>${html}</div>` : html;
+      upsertHtml(`person-${p.member_id}`, p.lng!, p.lat!, finalHtml, `${key}|${scheme}|${drivingMe ? "drv" : ""}`, () => onPersonPress?.(p));
     });
     pins.forEach((p) => {
       const col = /^#[0-9a-fA-F]{6}$/.test(p.color ?? "") ? p.color! : "#EA4335";
@@ -230,7 +334,7 @@ export function MapLibreCanvas(props: MapCanvasProps) {
     }
     markersRef.current.forEach((m, id) => { if (!alive.has(id)) { m.remove(); markersRef.current.delete(id); } });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, token, scheme, JSON.stringify(streets), JSON.stringify(located.map((p) => [p.member_id, p.lat, p.lng, p.color, p.name, p.photo_url])), JSON.stringify(pins.map((p) => [p.id, p.lat, p.lng, p.title])), JSON.stringify(incidents.map((i) => [i.id, i.lat, i.lng])), selected?.lat, selected?.lng]);
+  }, [ready, token, scheme, drive?.speedKmh, drive?.heading, JSON.stringify(streets), JSON.stringify(located.map((p) => [p.member_id, p.lat, p.lng, p.color, p.name, p.photo_url])), JSON.stringify(pins.map((p) => [p.id, p.lat, p.lng, p.title])), JSON.stringify(incidents.map((i) => [i.id, i.lat, i.lng])), selected?.lat, selected?.lng]);
 
   // ---- cercas: polígonos GeoJSON translúcidos + etiqueta con nombre ----
   useEffect(() => {

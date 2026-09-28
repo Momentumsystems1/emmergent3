@@ -10,6 +10,9 @@ export type MapCircle = { id: string; lat: number; lng: number; radius_m: number
 /** Círculo en edición (creación/ajuste de cerca): crece en tiempo real con el deslizador. */
 export type MapDraftCircle = { lat: number; lng: number; radius_m: number; color?: string };
 
+/** Estado de conducción: velocidad y rumbo (este último derivado del desplazamiento real). */
+export type DriveState = { speedKmh: number | null; heading: number | null };
+
 export const INCIDENT_TYPE: Record<string, string> = { Accident: "Accidente", Congestion: "Retención", Construction: "Obras", DisabledVehicle: "Vehículo averiado", LaneRestriction: "Carril cortado", MassTransit: "Transporte público", Miscellaneous: "Incidencia", OtherNews: "Aviso", PlannedEvent: "Evento", RoadClosure: "Vía cortada", RoadHazard: "Peligro en la vía", Weather: "Meteorología", Jam: "Atasco", Fog: "Niebla", Rain: "Lluvia", Ice: "Hielo", Wind: "Viento", Flooding: "Inundación", BrokenDownVehicle: "Vehículo averiado", RoadWorks: "Obras" };
 export const incidentIcon = (i: Incident) => (i.road_closed ? "close-circle" : i.jam ? "car" : /Construction|RoadWorks/i.test(i.type ?? "") ? "construct" : /Accident/i.test(i.type ?? "") ? "warning" : /Weather|Fog|Rain|Ice|Wind|Flood/i.test(i.type ?? "") ? "rainy" : "alert-circle");
 
@@ -26,6 +29,10 @@ export type MapCanvasProps = {
   /** Tap on the map (coordinate is undefined on web, where there is no real map). */
   onMapPress?: (c?: LatLng) => void;
   onMapLongPress?: (c: LatLng) => void;
+  /** Tap sobre una cerca (círculo) → abre la vista brújula del círculo. */
+  onCirclePress?: (c: MapCircle) => void;
+  /** Modo conducción: la cámara sigue con rumbo y zoom por velocidad. */
+  drive?: DriveState | null;
   /** User dragged the map (native only) → callers typically stop following. */
   onUserPan?: () => void;
   selected?: LatLng | null;

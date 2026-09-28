@@ -15,7 +15,7 @@ const LEGAL_DOCS: Record<string, { title: string; version: string; status: strin
     status: "Vigente",
     body: [
       "MY CLUSTER es un servicio de ubicación y protección familiar en tiempo real que permite compartir tu posición con las personas que tú eliges, dentro de círculos privados creados y administrados por los propios usuarios.",
-      "Al crear una cuenta aceptas estas condiciones. Debes ser mayor de edad y proporcionar datos veraces. Eres responsable de mantener la confidencialidad de tu contraseña y de toda actividad realizada desde tu cuenta.",
+      "Al crear una cuenta aceptas estas condiciones. Debes tener al menos 14 años. Si eres menor de edad, tu madre, padre o tutor debe crear y supervisar tu cuenta y gestionar tus permisos. Proporciona datos veraces. Eres responsable de mantener la confidencialidad de tu contraseña y de toda actividad realizada desde tu cuenta.",
       "El servicio se ofrece para uso personal y familiar. No está permitido usar MY CLUSTER para vigilar a personas sin su consentimiento, para finalidades ilícitas o para cualquier uso que vulnere la privacidad de terceros.",
       "Cada círculo es un espacio privado: solo sus miembros pueden ver la ubicación y la actividad compartida dentro de ese círculo. El creador del círculo decide quién entra y con qué permisos, y puede retirar miembros en cualquier momento.",
       "La precisión de la ubicación depende del dispositivo, la cobertura y los sensores disponibles. MY CLUSTER muestra la mejor estimación disponible, pero no garantiza precisión absoluta en tiempo real.",
@@ -58,7 +58,7 @@ const LEGAL_DOCS: Record<string, { title: string; version: string; status: strin
   },
   location: {
     title: "Compartir tu ubicación",
-    version: "1.0",
+    version: "1.1",
     status: "Vigente",
     body: [
       "MY CLUSTER es un servicio de ubicación familiar en tiempo real organizado en círculos privados. Compartir tu ubicación significa que la app envía tu posición a nuestros servidores y la muestra en el mapa a los miembros de los círculos donde tú has decidido ser visible. Ninguna ubicación se comparte sin que actives el permiso correspondiente.",
@@ -66,7 +66,7 @@ const LEGAL_DOCS: Record<string, { title: string; version: string; status: strin
       "Quién puede verlo: únicamente las personas que pertenecen a tus círculos, y solo mientras mantengas la visibilidad activa en ese círculo. Tu posición nunca es pública: ninguna persona fuera de tus círculos, ningún buscador y ningún tercero con fines publicitarios puede acceder a ella. Momentum Systems no vende ni cede datos de ubicación.",
       "Cuándo se comparte: solo cuando has concedido el permiso de ubicación del sistema y además tienes la visibilidad activada. Puedes pausar tu visibilidad en cualquier momento, de forma general o por círculo, y la pausa es efectiva de inmediato: el resto deja de verte en el mapa. Tú decides si compartes tu ubicación exacta o solo una zona aproximada.",
       "Control granular por categoría: en el alta y desde tu perfil puedes activar o desactivar por separado la ubicación actual, la zona aproximada, las rutas e historial, la hora estimada de llegada, el estado de movimiento, el modo de transporte, las alertas de seguridad, el estado del dispositivo, la baliza V16 y las métricas de uso. Desactivar una categoría no afecta a las demás.",
-      "Cuánto tiempo se conserva: tu posición en vivo se sustituye por la más reciente. El historial de trayectos se usa únicamente para las funciones que lo necesitan (cercas, convoy, rutas) y se conserva el tiempo mínimo necesario para prestarlas. Al eliminar tu cuenta, tu historial de ubicación y tus datos personales se borran de nuestros sistemas activos conforme a la política de privacidad.",
+      "Cuánto tiempo se conserva: tu posición en vivo se sustituye por la más reciente. El historial de trayectos se usa únicamente para las funciones que lo necesitan (cercas, convoy, rutas) y cada posición se borra automáticamente a los 30 días. Al eliminar tu cuenta, tu historial de ubicación y tus datos personales se borran de nuestros sistemas activos conforme a la política de privacidad.",
       "La excepción de seguridad: si pulsas SOS, tu posición en ese momento se envía como alerta a tus círculos y contactos de emergencia, incluso si tu visibilidad estaba en pausa. Es la única situación en la que una alerta comparte tu ubicación sin visibilidad activa. MY CLUSTER no sustituye a los servicios oficiales de emergencia (112).",
       "Cómo dejar de compartir: tres formas, todas inmediatas. Pausar la visibilidad desde la app (general o por círculo); retirar el permiso de ubicación en los ajustes de tu dispositivo; o eliminar tu cuenta, que además borra tus datos e historial. Si abandonas un círculo, sus miembros dejan de verte al instante.",
       "Base jurídica y tus derechos: la ubicación se trata sobre la base de tu consentimiento (art. 6.1.a RGPD), que puedes retirar en cualquier momento con los mismos medios con que lo diste, sin que ello afecte a la licitud del tratamiento anterior. Conservamos un registro de tus consentimientos con fecha y versión. Puedes ejercer tus derechos de acceso, rectificación, supresión, oposición, limitación y portabilidad desde la app o escribiéndonos, y reclamar ante la AEPD (www.aepd.es).",

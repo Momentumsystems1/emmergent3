@@ -17,7 +17,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { api } from "@/src/api";
 import { fetchPermissionsRecord } from "@/src/permissions";
 import { useAuth } from "@/src/auth";
-import { Incident, INCIDENT_TYPE, incidentIcon, LatLng, MapCanvas, MapPerson } from "@/src/components/MapCanvas";
+import { DriveState, Incident, INCIDENT_TYPE, incidentIcon, LatLng, MapCanvas, MapCircle, MapPerson } from "@/src/components/MapCanvas";
+import { CompassOverlay } from "@/src/components/CompassOverlay";
 import { BottomNav } from "@/src/components/BottomNav";
 import { GroupsRail } from "@/src/components/GroupsRail";
 import { MainMenu } from "@/src/components/MainMenu";
@@ -39,6 +40,8 @@ import { fetchZones, insertZoneEvent, insideZone, zoneWatchesUser } from "@/src/
 import { recordTrailPoint } from "@/src/co2";
 
 const distM = (a: LatLng, b: LatLng) => { const R = 6371000, dLat = ((b.lat - a.lat) * Math.PI) / 180, dLng = ((b.lng - a.lng) * Math.PI) / 180; const h = Math.sin(dLat / 2) ** 2 + Math.cos((a.lat * Math.PI) / 180) * Math.cos((b.lat * Math.PI) / 180) * Math.sin(dLng / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(h)); };
+// Rumbo en grados (0 = Norte, 90 = Este) de a → b: base del modo conducción (heading-up).
+const bearingDeg = (a: LatLng, b: LatLng) => { const dLng = ((b.lng - a.lng) * Math.PI) / 180, la1 = (a.lat * Math.PI) / 180, la2 = (b.lat * Math.PI) / 180; const y = Math.sin(dLng) * Math.cos(la2); const x = Math.cos(la1) * Math.sin(la2) - Math.sin(la1) * Math.cos(la2) * Math.cos(dLng); return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360; };
 const fmtDist = (m: number) => (m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`);
 const originParamsOf = (p: LatLng | null) => (p ? { fromLat: String(p.lat), fromLng: String(p.lng) } : {});
 
@@ -59,6 +62,11 @@ export default function MapHome() {
   const [memberSel, setMemberSel] = useState<MapPerson | null>(null);
   const [myPos, setMyPos] = useState<LatLng | null>(null);
   const [focus, setFocus] = useState<(LatLng & { key: number }) | undefined>();
+  // Modo conducción + vista brújula de cercas.
+  const [compassZone, setCompassZone] = useState<MapCircle | null>(null);
+  const [drive, setDrive] = useState<DriveState | null>(null);
+  const [followOff, setFollowOff] = useState(false);
+  const lastPosRef = useRef<LatLng | null>(null);
 
   const groups = useQuery({ queryKey: ["groups"], queryFn: fetchGroups, refetchInterval: 15000 });
   const group: any = groups.data?.[0];
@@ -125,6 +133,25 @@ export default function MapHome() {
   // eslint-disable-next-line react-hooks/set-state-in-effect, react-hooks/exhaustive-deps -- one-shot centering on the first GPS fix
   useEffect(() => { if (mePos && !focus) setFocus({ lat: mePos.lat, lng: mePos.lng, key: 1 }); }, [mePos?.lat, mePos?.lng, focus]);
 
+  // Modo conducción: rumbo derivado del desplazamiento real (>8 m) + velocidad de telemetría.
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- reacciona a cada fix de posición
+  useEffect(() => {
+    if (!mePos) return;
+    const prev = lastPosRef.current;
+    lastPosRef.current = mePos;
+    let heading: number | null = null;
+    if (prev && distM(prev, mePos) > 8) heading = bearingDeg(prev, mePos);
+    const spd = telemetry.speedKmh ?? null;
+    setDrive(spd != null && spd > 10 ? { speedKmh: spd, heading } : null);
+  }, [mePos?.lat, mePos?.lng, telemetry.speedKmh]);
+
+  // Seguimiento continuo mientras se conduce (el usuario puede romperlo arrastrando el mapa).
+  // eslint-disable-next-line react-hooks/set-state-in-effect, react-hooks/exhaustive-deps -- seguimiento activo de posición
+  useEffect(() => {
+    if (!drive || followOff || !mePos) return;
+    setFocus({ ...mePos, key: focus?.key ?? 1 });
+  }, [drive, followOff, mePos?.lat, mePos?.lng]);
+
   // Trail de ubicación (base del cálculo de CO2): solo cuando comparto y con posición real
   useEffect(() => {
     if (!mePos || !group?.id || !user?.id || !sharesLocation) return;
@@ -154,10 +181,10 @@ export default function MapHome() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mePos?.lat, mePos?.lng, zones.data, user?.id, group?.id]);
 
-  const closeAll = () => { setSel(null); setMemberSel(null); setSharing(false); setTrafficPanel(false); setIncSel(null); setUserOpen(false); setSosOpen(false); };
-  const anyOpen = !!sel || !!memberSel || sharing || trafficPanel || !!incSel || userOpen || sosOpen || (locBanner && loc.perm !== "granted");
+  const closeAll = () => { setSel(null); setMemberSel(null); setSharing(false); setTrafficPanel(false); setIncSel(null); setUserOpen(false); setSosOpen(false); setCompassZone(null); };
+  const anyOpen = !!sel || !!memberSel || sharing || trafficPanel || !!incSel || userOpen || sosOpen || !!compassZone || (locBanner && loc.perm !== "granted");
   const onMapPress = (c?: LatLng) => { if (anyOpen) { closeAll(); setLocBanner(false); return; } if (c) setSel(c); };
-  const recenter = () => { closeAll(); if (!mePos) { toast(loc.perm === "granted" ? "Obteniendo tu ubicación…" : "Permite la ubicación para centrarte"); if (loc.perm !== "granted") setLocBanner(true); return; } setFocus({ ...mePos, key: (focus?.key ?? 0) + 1 }); };
+  const recenter = () => { closeAll(); setFollowOff(false); if (!mePos) { toast(loc.perm === "granted" ? "Obteniendo tu ubicación…" : "Permite la ubicación para centrarte"); if (loc.perm !== "granted") setLocBanner(true); return; } setFocus({ ...mePos, key: (focus?.key ?? 0) + 1 }); };
   const originParams = originParamsOf(mePos);
   const selName = reverse.data?.name ?? (sel ? `${sel.lat.toFixed(5)}, ${sel.lng.toFixed(5)}` : "");
   const userColor = user?.avatar?.color ?? colors.brandPrimary;
@@ -207,6 +234,8 @@ export default function MapHome() {
     <View style={s.root} testID="map-home">
       <MapCanvas people={people} center={focus} selected={sel} onMapPress={onMapPress} onMapLongPress={(c) => { closeAll(); setSel(c); }}
         circles={(zones.data ?? []).map((z) => ({ id: z.id, lat: z.lat, lng: z.lng, radius_m: z.radius_m, title: z.name, active: z.is_active, occupied: people.some((p) => p.lat != null && p.lng != null && insideZone({ lat: p.lat, lng: p.lng }, z)) }))}
+        onCirclePress={(c) => { closeAll(); setCompassZone(c); }}
+        drive={followOff ? null : drive} onUserPan={() => setFollowOff(true)}
         traffic={traffic} incidents={traffic ? incidents.data ?? [] : []} onIncidentPress={(i) => { closeAll(); setIncSel(i); }}
         onPersonPress={(p) => { closeAll(); if (p.member_id === "me-local") router.push("/profile"); else router.push(`/person/${p.member_id}?group=${group?.id}`); }} />
 
@@ -388,6 +417,9 @@ export default function MapHome() {
           <Pressable testID="create-group-cta" onPress={() => router.push("/onboarding/group")} style={s.hintBtn}><Ionicons name="add-circle" size={18} color={colors.onBrandPrimary} /><T weight="semibold" style={{ fontSize: 13, color: colors.onBrandPrimary }}>Crea tu grupo</T></Pressable>
         </View>
       ) : null}
+
+      {/* Vista brújula de la cerca pulsada: radio efectivo + posición real de cada miembro */}
+      {compassZone ? <CompassOverlay zone={compassZone} people={people} onClose={() => setCompassZone(null)} /> : null}
     </View>
   );
 }

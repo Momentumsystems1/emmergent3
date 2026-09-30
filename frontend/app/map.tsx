@@ -10,7 +10,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Location from "expo-location";
 import { useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
-import { Pressable, ScrollView, View } from "react-native";
+import { Pressable, ScrollView, View, Linking } from "react-native";
 import Animated, { FadeInDown, FadeOut } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -79,7 +79,7 @@ export default function MapHome() {
   const telemetry = useTelemetry(true);
   const escort = useEscort();
   const escortOn = escort.active;
-  const reverse = useQuery({ queryKey: ["reverse", sel?.lat, sel?.lng], enabled: !!sel, retry: false, queryFn: () => api<{ name: string }>(`/mobility/reverse?lat=${sel!.lat}&lng=${sel!.lng}`) });
+  const reverse = useQuery({ queryKey: ["reverse", sel?.lat, sel?.lng], enabled: !!sel, retry: false, queryFn: () => api<{ short?: string; full?: string }>(`/mobility/reverse?lat=${sel!.lat}&lng=${sel!.lng}`) });
   const weather = useQuery({ queryKey: ["weather", sel?.lat?.toFixed(3), sel?.lng?.toFixed(3)], enabled: !!sel, retry: false, staleTime: 600000, queryFn: () => api<any>(`/mobility/weather?lat=${sel!.lat}&lng=${sel!.lng}`) });
   const [traffic, setTraffic] = useState(false);
   const [trafficPanel, setTrafficPanel] = useState(false);
@@ -132,6 +132,9 @@ export default function MapHome() {
   // First fix → center once with navigator zoom; afterwards only the recenter FAB moves the camera.
   // eslint-disable-next-line react-hooks/set-state-in-effect, react-hooks/exhaustive-deps -- one-shot centering on the first GPS fix
   useEffect(() => { if (mePos && !focus) setFocus({ lat: mePos.lat, lng: mePos.lng, key: 1 }); }, [mePos?.lat, mePos?.lng, focus]);
+
+  // Mi calle actual (nombre y número de la vía): se recalcula al moverse ~11 m (banda informativa del mapa).
+  const meStreet = useQuery({ queryKey: ["reverse-me", mePos?.lat?.toFixed(4), mePos?.lng?.toFixed(4)], enabled: !!mePos, retry: false, staleTime: 120000, queryFn: () => api<{ short?: string; full?: string }>(`/mobility/reverse?lat=${mePos!.lat}&lng=${mePos!.lng}`) });
 
   // Modo conducción: rumbo derivado del desplazamiento real (>8 m) + velocidad de telemetría.
   // eslint-disable-next-line react-hooks/exhaustive-deps -- reacciona a cada fix de posición
@@ -186,7 +189,7 @@ export default function MapHome() {
   const onMapPress = (c?: LatLng) => { if (anyOpen) { closeAll(); setLocBanner(false); return; } if (c) setSel(c); };
   const recenter = () => { closeAll(); setFollowOff(false); if (!mePos) { toast(loc.perm === "granted" ? "Obteniendo tu ubicación…" : "Permite la ubicación para centrarte"); if (loc.perm !== "granted") setLocBanner(true); return; } setFocus({ ...mePos, key: (focus?.key ?? 0) + 1 }); };
   const originParams = originParamsOf(mePos);
-  const selName = reverse.data?.name ?? (sel ? `${sel.lat.toFixed(5)}, ${sel.lng.toFixed(5)}` : "");
+  const selName = (reverse.data?.short || reverse.data?.full) ?? (sel ? `${sel.lat.toFixed(5)}, ${sel.lng.toFixed(5)}` : "");
   const userColor = user?.avatar?.color ?? colors.brandPrimary;
   const railGroups = (groups.data ?? []).map((g: any) => ({ id: g.id, name: g.name, attention: ((g.my_role === "owner" || g.my_role === "admin") ? (g.stats?.pending ?? 0) : 0) + (pendingTrips.data ?? []).filter((t) => t.group_id === g.id).length }));
   const tasks = [
@@ -296,6 +299,16 @@ export default function MapHome() {
       <GroupsRail groups={railGroups} top={insets.top + 76} activeId={group?.id} onPress={(g) => { closeAll(); router.push(`/group/${g.id}`); }} />
       <SensorHUD top={insets.top + 128} data={telemetry} escort={escortOn} />
 
+      {/* Mi calle actual (nombre y número de la vía), estilo navegador; se oculta al abrir tarjetas */}
+      {mePos && !anyOpen ? (
+        <View pointerEvents="none" style={[s.streetWrap, { bottom: insets.bottom + 118 }]} testID="street-chip">
+          <View style={s.streetPill}>
+            <Ionicons name="navigate" size={12} color={colors.brandPrimary} />
+            <T weight="semibold" style={{ fontSize: 12.5, flexShrink: 1 }} numberOfLines={1} testID="street-chip-name">{meStreet.data?.short || meStreet.data?.full || "Buscando tu calle…"}</T>
+          </View>
+        </View>
+      ) : null}
+
       {/* Top-right user card */}
       <UserCard pos={mePos} tasks={tasks} top={insets.top + 76} sharing={sharesLocation && loc.perm === "granted"} open={userOpen} onOpen={() => { closeAll(); setUserOpen(true); }} onClose={() => setUserOpen(false)} />
 
@@ -390,7 +403,8 @@ export default function MapHome() {
           </View>
           <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: spacing.sm }}>
             <Tool testID="sel-go" icon="navigate" label="Ir" primary onPress={() => { router.push({ pathname: "/drive", params: { ...originParams, lat: String(sel.lat), lng: String(sel.lng), place: selName } }); setSel(null); }} />
-            <Tool testID="sel-meet" icon="calendar" label="Quedar aquí" onPress={() => { if (!group) return toast("Crea un grupo primero"); router.push({ pathname: "/meeting/new", params: { group: group.id, lat: String(sel.lat), lng: String(sel.lng), place: selName } }); setSel(null); }} />
+            <Tool testID="sel-google" icon="logo-google" label="Google" onPress={() => Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${sel.lat},${sel.lng}${mePos ? `&origin=${mePos.lat},${mePos.lng}` : ""}&travelmode=driving`)} />
+            <Tool testID="sel-meet" icon="calendar" label="Quedar" onPress={() => { if (!group) return toast("Crea un grupo primero"); router.push({ pathname: "/meeting/new", params: { group: group.id, lat: String(sel.lat), lng: String(sel.lng), place: selName } }); setSel(null); }} />
             <Tool testID="sel-convoy" icon="car-sport" label="Convoy" onPress={() => { if (!group) return toast("Crea un grupo primero"); router.push({ pathname: "/convoy/new", params: { group: group.id, lat: String(sel.lat), lng: String(sel.lng), place: selName } }); setSel(null); }} />
             <Tool testID="sel-fence" icon="radio-button-on" label="Cerca" onPress={() => { if (!group) return toast("Crea un grupo primero"); router.push({ pathname: "/fences/new", params: { group: group.id, lat: String(sel.lat), lng: String(sel.lng), place: selName } }); setSel(null); }} />
           </View>
@@ -451,8 +465,10 @@ const useStyles = makeStyles((c) => ({
   incRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingVertical: 8, borderBottomWidth: 1, borderColor: c.divider },
   selCard: { position: "absolute", left: spacing.md, right: spacing.md, backgroundColor: c.glassStrong, borderRadius: radius.lg, borderWidth: 1, borderColor: c.hairline, padding: spacing.md + 2, shadowColor: c.surfaceInverse, shadowOpacity: 0.2, shadowRadius: 20, shadowOffset: { width: 0, height: 8 }, elevation: 6 },
   closeBtn: { width: 28, height: 28, borderRadius: 14, backgroundColor: c.surfaceTertiary, alignItems: "center", justifyContent: "center" },
-  tool: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, height: 38, borderRadius: radius.pill, backgroundColor: c.surfaceSecondary, borderWidth: 1, borderColor: c.border, paddingHorizontal: 6 },
+  tool: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4, height: 38, borderRadius: radius.pill, backgroundColor: c.surfaceSecondary, borderWidth: 1, borderColor: c.border, paddingHorizontal: 4 },
   toolOn: { backgroundColor: c.brandPrimary, borderColor: c.brandPrimary },
+  streetWrap: { position: "absolute", left: spacing.md, right: spacing.md, alignItems: "center" },
+  streetPill: { flexDirection: "row", alignItems: "center", gap: 6, maxWidth: "100%", backgroundColor: c.glassStrong, borderRadius: radius.pill, borderWidth: 1, borderColor: c.hairline, paddingHorizontal: 12, paddingVertical: 7, shadowColor: c.surfaceInverse, shadowOpacity: 0.16, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 4 },
   hint: { position: "absolute", left: spacing.md, right: spacing.md, alignItems: "flex-start" },
   hintBtn: { flexDirection: "row", alignItems: "center", gap: 6, height: 46, paddingHorizontal: 18, borderRadius: radius.pill, backgroundColor: c.brandPrimary, shadowColor: c.brandPrimary, shadowOpacity: 0.35, shadowRadius: 14, shadowOffset: { width: 0, height: 5 }, elevation: 4 },
   txt: { fontFamily: fonts.regular },

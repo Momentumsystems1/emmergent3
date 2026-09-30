@@ -46,12 +46,13 @@ export function ensureMcStyles() {
   if (mcStylesInjected || typeof document === "undefined") return;
   mcStylesInjected = true;
   const css = `
-.mc-pin{display:flex;flex-direction:column;align-items:center;transform:translateY(-4px)}
+.mc-pin{display:flex;flex-direction:column;align-items:center;transform:translateY(-4px);position:relative}
 .mc-ava{width:44px;height:44px;border-radius:50%;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;overflow:hidden;background:#D93025}
 .mc-ava img{width:100%;height:100%;object-fit:cover}
 .mc-ava span{color:#fff;font:700 16px/1 "Plus Jakarta Sans",Roboto,sans-serif}
-.mc-pin--me .mc-ava{width:52px;height:52px}
-.mc-pin--me .mc-ava{border-color:#fff;box-shadow:0 0 0 4px rgba(234,67,53,.28),0 2px 8px rgba(0,0,0,.35)}
+.mc-pin--me .mc-ava{width:54px;height:54px}
+.mc-pin--me .mc-ava{border-color:#fff;box-shadow:0 0 0 5px rgba(26,115,232,.32),0 2px 10px rgba(0,0,0,.4)}
+.mc-halo{position:absolute;top:27px;left:50%;transform:translate(-50%,-50%);width:112px;height:112px;border-radius:50%;background:radial-gradient(circle,rgba(26,115,232,.30) 0%,rgba(26,115,232,0) 68%);pointer-events:none}
 .mc-stem{width:2px;height:6px;background:rgba(255,255,255,.92)}
 .mc-chip{margin-top:5px;background:rgba(255,255,255,.95);border-radius:9px;padding:3px 8px 4px;text-align:center;box-shadow:0 1px 6px rgba(0,0,0,.25);max-width:180px}
 .mc-name{display:block;color:#202124;font:700 11.5px/1.25 "Plus Jakarta Sans",Roboto,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -198,7 +199,7 @@ export function personHtml(p: MapPerson, street: string | undefined, token: stri
   const name = esc(p.name.length > 20 ? `${p.name.slice(0, 19)}…` : p.name);
   const addr = street ? esc(street) : "";
   const key = `${p.name}|${p.color}|${addr}|${photoUrl ? 1 : 0}|${p.is_me ? 1 : 0}`;
-  const html = `<div class="mc-pin${p.is_me ? " mc-pin--me" : ""}"><div class="mc-ava" style="background:${color}">${photoUrl ? `<img src="${photoUrl}" alt="" onerror="this.parentElement.innerHTML='<span>${init}</span>'">` : `<span>${init}</span>`}</div><div class="mc-stem"></div><div class="mc-chip"><span class="mc-name">${name}</span>${addr ? `<span class="mc-addr">${addr}</span>` : ""}</div></div>`;
+  const html = `<div class="mc-pin${p.is_me ? " mc-pin--me" : ""}">${p.is_me ? `<div class="mc-halo"></div>` : ""}<div class="mc-ava" style="background:${color}">${photoUrl ? `<img src="${photoUrl}" alt="" onerror="this.parentElement.innerHTML='<span>${init}</span>'">` : `<span>${init}</span>`}</div><div class="mc-stem"></div><div class="mc-chip"><span class="mc-name">${name}</span>${addr ? `<span class="mc-addr">${addr}</span>` : ""}</div></div>`;
   return { html, key };
 }
 function incidentIconG(roadClosed: boolean): { url: string; scaledSize: any; anchor: any } {

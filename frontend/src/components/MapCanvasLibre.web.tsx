@@ -1,7 +1,7 @@
 // Renderer web por defecto: MapLibre GL + teselas vectoriales libres (OpenFreeMap / OpenStreetMap).
 // Sin claves de API, sin restricciones de referrer, sin consola de Google: el mapa SIEMPRE carga.
-// Look tipo navegador (referencia Waze): estilo oscuro, apertura cinematográfica en 3D (pitch 60)
-// hacia el usuario, edificios 3D y marcadores HTML con avatar (foto + nombre + calle).
+// Look tipo navegador (referencia Waze): estilo claro propio, apertura cinematográfica en 3D
+// (pitch 60) hacia el usuario, edificios 3D y marcadores HTML con avatar (foto + nombre + calle).
 // MapLibre se carga por inyección de script desde CDN (mismo patrón que el loader de Google):
 // cero riesgo de bundling en Metro y cero dependencias npm nuevas.
 import React, { useEffect, useRef, useState } from "react";
@@ -15,8 +15,11 @@ import { fonts, useTheme } from "@/src/theme";
 const ML_VERSION = "5.6.0";
 const ML_JS = `https://cdn.jsdelivr.net/npm/maplibre-gl@${ML_VERSION}/dist/maplibre-gl.js`;
 const ML_CSS = `https://cdn.jsdelivr.net/npm/maplibre-gl@${ML_VERSION}/dist/maplibre-gl.css`;
-// Estilo oscuro vectorial (OpenMapTiles sobre OSM). Requiere atribución visible (la lleva el mapa).
-const STYLE_URL = "https://tiles.openfreemap.org/styles/dark";
+// Estilo propio "MY CLUSTER Claro" (servido desde nuestra web): base OpenMapTiles/OSM
+// con colores claros tipo navegador, nombres de calle y números de portal. Si no
+// respondiera, cae al estilo claro público de OpenFreeMap (mismo schema y glifos).
+const STYLE_URL = "https://momentumsystems1.github.io/styles/cluster-light.json";
+const STYLE_FALLBACK_URL = "https://tiles.openfreemap.org/styles/positron";
 const FOLLOW_ZOOM = 18.5; // zoom alto de seguimiento (hito: avatar centrado y cercano)
 const PITCH_3D = 60; // perspectiva 3D tipo navegador
 const FALLBACK_CENTER = { lat: 40.4168, lng: -3.7038 }; // Puerta del Sol
@@ -90,7 +93,7 @@ function ensureConeStyles() {
   if (coneStylesDone || typeof document === "undefined") return;
   coneStylesDone = true;
   const st = document.createElement("style");
-  st.textContent = `.mc-cone-wrap{position:relative}.mc-cone{position:absolute;left:50%;top:-34px;transform:translateX(-50%);width:0;height:0;border-left:13px solid transparent;border-right:13px solid transparent;border-bottom:34px solid rgba(26,115,232,.35);pointer-events:none}`;
+  st.textContent = `.mc-cone-wrap{position:relative}.mc-cone{position:absolute;left:50%;top:-26px;transform:translateX(-50%);width:0;height:0;border-left:15px solid transparent;border-right:15px solid transparent;border-bottom:38px solid rgba(26,115,232,.38);pointer-events:none}`;
   document.head.appendChild(st);
 }
 
@@ -141,10 +144,10 @@ function add3dBuildings(map: any) {
         "source-layer": "building",
         minzoom: 14.5,
         paint: {
-          "fill-extrusion-color": "#232936",
+          "fill-extrusion-color": "#d9d5cf",
           "fill-extrusion-height": ["coalesce", ["get", "render_height"], ["get", "height"], 8],
           "fill-extrusion-base": ["coalesce", ["get", "render_min_height"], 0],
-          "fill-extrusion-opacity": 0.85,
+          "fill-extrusion-opacity": 0.55,
         },
       },
       firstSymbol?.id,
@@ -183,15 +186,21 @@ export function MapLibreCanvas(props: MapCanvasProps) {
   useEffect(() => {
     let dead = false;
     let lpTimer: any = null;
+    let lpFired = false; // pulsación larga consumida: el clic posterior se ignora
     loadMapLibre()
-      .then((ml) => {
+      .then(async (ml) => {
         if (dead || !hostRef.current) return;
         ensureMcStyles();
         loadTokens().then((t) => !dead && setToken(t?.access_token ?? null)).catch(() => {});
         const c = center ?? FALLBACK_CENTER;
+        // Estilo propio con respaldo: si el JSON hospedado no responde, se usa el claro público.
+        const style: any = await fetch(STYLE_URL)
+          .then((r) => (r.ok ? r.json() : Promise.reject(new Error("style http"))))
+          .catch(() => STYLE_FALLBACK_URL);
+        if (dead || !hostRef.current) return;
         const map = new ml.Map({
           container: hostRef.current as any,
-          style: STYLE_URL,
+          style,
           center: [c.lng, c.lat],
           zoom: center ? 13.5 : 11,
           pitch: 0,
@@ -214,6 +223,7 @@ export function MapLibreCanvas(props: MapCanvasProps) {
           }
         });
         map.on("click", (e: any) => {
+          if (lpFired) { lpFired = false; return; } // el clic que cierra una pulsación larga no abre brújula ni planta pin
           const h = handlersRef.current;
           // 1) ¿Toque sobre una cerca? → vista brújula del círculo (y no se planta pin).
           try {
@@ -227,7 +237,7 @@ export function MapLibreCanvas(props: MapCanvasProps) {
           h.onMapPress?.(snapToLogicalPlace(map, e));
         });
         map.on("dragstart", () => handlersRef.current.onUserPan?.());
-        map.on("mousedown", (e: any) => { lpTimer = setTimeout(() => handlersRef.current.onMapLongPress?.({ lat: e.lngLat.lat, lng: e.lngLat.lng }), 550); });
+        map.on("mousedown", (e: any) => { lpFired = false; lpTimer = setTimeout(() => { lpFired = true; handlersRef.current.onMapLongPress?.({ lat: e.lngLat.lat, lng: e.lngLat.lng }); }, 550); });
         ["mouseup", "dragstart"].forEach((ev) => map.on(ev, () => clearTimeout(lpTimer)));
         map.on("error", () => { /* errores puntuales de tesela: MapLibre reintenta solo */ });
       })
@@ -370,7 +380,7 @@ export function MapLibreCanvas(props: MapCanvasProps) {
         let m = labelMarkersRef.current.get(id);
         if (!m) {
           const el = document.createElement("div");
-          el.style.cssText = `pointer-events:none;font:700 11px sans-serif;color:${stroke};text-shadow:0 1px 3px rgba(0,0,0,.8);white-space:nowrap`;
+          el.style.cssText = `pointer-events:none;font:700 11px sans-serif;color:${stroke};text-shadow:0 1px 3px rgba(255,255,255,.95),0 0 6px rgba(255,255,255,.9);white-space:nowrap`;
           el.textContent = c.title;
           m = new ml.Marker({ element: el, anchor: "bottom" }).setLngLat([c.lng, c.lat]).addTo(map);
           labelMarkersRef.current.set(id, m);
@@ -449,11 +459,11 @@ export function MapLibreCanvas(props: MapCanvasProps) {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: "#0B0E14", overflow: "hidden" }} testID="map-canvas-libre">
+    <View style={{ flex: 1, backgroundColor: "#eef1f5", overflow: "hidden" }} testID="map-canvas-libre">
       <View ref={hostRef} style={{ position: "absolute", left: 0, top: 0, right: 0, bottom: 0 }} />
       {!ready ? (
         <View style={{ position: "absolute", left: 0, right: 0, top: "48%", alignItems: "center" }}>
-          <Text style={{ fontFamily: fonts.medium, fontSize: 12, color: "#9AA0A6" }}>Cargando mapa…</Text>
+          <Text style={{ fontFamily: fonts.medium, fontSize: 12, color: "#6b7280" }}>Cargando mapa…</Text>
         </View>
       ) : null}
     </View>

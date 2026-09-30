@@ -3,7 +3,7 @@ import Ionicons from "@react-native-vector-icons/ionicons";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React from "react";
-import { Modal, Pressable, View } from "react-native";
+import { Modal, Pressable, View, Linking } from "react-native";
 import Animated, { FadeInDown, FadeOut } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -63,6 +63,7 @@ export function MemberToolsSheet({ member, mePos, groupId, onClose, onFocus }: {
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, marginTop: spacing.md }}>
             <Tool testID="member-tool-focus" icon="locate" label="Centrar" disabled={!located} onPress={() => { if (!located) return toast("Sin ubicación"); onFocus(member); onClose(); }} />
             <Tool testID="member-tool-go" icon="navigate" label="Ir hacia" primary disabled={!located} onPress={goDrive} />
+            <Tool testID="member-tool-google" icon="logo-google" label="Google" disabled={!located} onPress={() => { if (!located) return; Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${member.lat},${member.lng}${mePos ? `&origin=${mePos.lat},${mePos.lng}` : ""}&travelmode=driving`); }} />
             <Tool testID="member-tool-ping" icon="help-circle" label="¿Todo bien?" onPress={ping} />
             <Tool testID="member-tool-meet" icon="calendar" label="Quedar" onPress={() => { if (!groupId) return toast("Crea un grupo primero"); onClose(); router.push({ pathname: "/meeting/new", params: { group: groupId } }); }} />
             <Tool testID="member-tool-convoy" icon="car-sport" label="Convoy" onPress={() => { if (!groupId) return toast("Crea un grupo primero"); onClose(); router.push({ pathname: "/convoy/new", params: { group: groupId } }); }} />

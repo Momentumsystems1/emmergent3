@@ -441,7 +441,7 @@ export default function MapHome() {
 function Tool({ icon, label, onPress, testID, primary }: { icon: string; label: string; onPress: () => void; testID: string; primary?: boolean }) {
   const s = useStyles(); const { colors } = useTheme();
   const fg = primary ? colors.onBrandPrimary : colors.onSurface;
-  return <Pressable testID={testID} onPress={onPress} style={[s.tool, primary && s.toolOn]}><Ionicons name={icon as any} size={15} color={fg} /><T weight="semibold" style={{ fontSize: 12, color: fg }} numberOfLines={1}>{label}</T></Pressable>;
+  return <Pressable testID={testID} onPress={onPress} style={[s.tool, primary && s.toolOn]}><Ionicons name={icon as any} size={13} color={fg} /><T weight="semibold" style={{ fontSize: 11, color: fg }} numberOfLines={1}>{label}</T></Pressable>;
 }
 
 const useStyles = makeStyles((c) => ({

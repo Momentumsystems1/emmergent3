@@ -186,7 +186,7 @@ export function MapLibreCanvas(props: MapCanvasProps) {
   useEffect(() => {
     let dead = false;
     let lpTimer: any = null;
-    let lpFired = false; // pulsación larga consumida: el clic posterior se ignora
+    let lpAt = 0; // instante de la última pulsación larga: los clics que la siguen se ignoran
     loadMapLibre()
       .then(async (ml) => {
         if (dead || !hostRef.current) return;
@@ -223,7 +223,7 @@ export function MapLibreCanvas(props: MapCanvasProps) {
           }
         });
         map.on("click", (e: any) => {
-          if (lpFired) { lpFired = false; return; } // el clic que cierra una pulsación larga no abre brújula ni planta pin
+          if (Date.now() - lpAt < 1500) return; // el/los clic(s) que cierran una pulsación larga no abren brújula ni plantan pin
           const h = handlersRef.current;
           // 1) ¿Toque sobre una cerca? → vista brújula del círculo (y no se planta pin).
           try {
@@ -237,7 +237,7 @@ export function MapLibreCanvas(props: MapCanvasProps) {
           h.onMapPress?.(snapToLogicalPlace(map, e));
         });
         map.on("dragstart", () => handlersRef.current.onUserPan?.());
-        map.on("mousedown", (e: any) => { lpFired = false; lpTimer = setTimeout(() => { lpFired = true; handlersRef.current.onMapLongPress?.({ lat: e.lngLat.lat, lng: e.lngLat.lng }); }, 550); });
+        map.on("mousedown", (e: any) => { lpTimer = setTimeout(() => { lpAt = Date.now(); handlersRef.current.onMapLongPress?.({ lat: e.lngLat.lat, lng: e.lngLat.lng }); }, 550); });
         ["mouseup", "dragstart"].forEach((ev) => map.on(ev, () => clearTimeout(lpTimer)));
         map.on("error", () => { /* errores puntuales de tesela: MapLibre reintenta solo */ });
       })

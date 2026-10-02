@@ -6,6 +6,7 @@ const SUPA = Deno.env.get("SUPABASE_URL");
 const ANON = Deno.env.get("SUPABASE_ANON_KEY");
 const SVC = Deno.env.get("SENTINEL_SERVICE_KEY");
 const MAPBOX = Deno.env.get("MAPBOX_TOKEN");
+const AZURE = Deno.env.get("AZURE_MAPS_KEY");
 
 // ---- Documentos legales servidos por la API (versionados aqui; sin tabla dedicada) ----
 const LEGAL_DOCS: Record<string, { title: string; version: string; status: string; body: string[] }> = {
@@ -423,6 +424,68 @@ function polyEncode(coords) {
   }
   return out;
 }
+
+// ---- Azure Maps Traffic: incidencias en un bbox ----
+// Categorías numéricas (API clásica) → nombres que ya entiende el frontend.
+const AZ_ICON = ["Miscellaneous", "Accident", "Fog", "RoadHazard", "Rain", "Ice", "Jam", "LaneRestriction", "RoadClosure", "Construction", "Wind", "Flooding", "Miscellaneous", "Miscellaneous", "BrokenDownVehicle"];
+function azMapIncident(o) {
+  // Normaliza una incidencia (API nueva GeoJSON o clásica) al shape del frontend.
+  const cat = o.iconCategory ?? o.category ?? o.incidentType;
+  const type = typeof cat === "string" ? cat : AZ_ICON[cat ?? 0] ?? "Miscellaneous";
+  const roadClosed = o.isRoadClosed === true || type === "RoadClosure";
+  return {
+    id: String(o.id ?? crypto.randomUUID()),
+    lat: o.lat,
+    lng: o.lng,
+    type,
+    title: o.title ?? undefined,
+    description: o.description ?? undefined,
+    severity: typeof o.magnitudeOfDelay === "number" ? o.magnitudeOfDelay : undefined,
+    delay_s: typeof o.delay === "number" ? Math.round(o.delay) : undefined,
+    road_closed: roadClosed,
+    jam: type === "Jam"
+  };
+}
+async function azIncidents(minLat, minLng, maxLat, maxLng) {
+  const bbox = `${minLng},${minLat},${maxLng},${maxLat}`;
+  // 1) API actual (GeoJSON)
+  try {
+    const u = new URL("https://atlas.microsoft.com/traffic/incident");
+    u.searchParams.set("api-version", "2024-04-01");
+    u.searchParams.set("bbox", bbox);
+    u.searchParams.set("subscription-key", AZURE);
+    const r = await fetch(u);
+    if (r.ok) {
+      const d = await r.json();
+      return (d.features ?? []).map((f)=>azMapIncident({
+        ...(f.properties ?? {}),
+        lat: f.geometry?.coordinates?.[1],
+        lng: f.geometry?.coordinates?.[0]
+      })).filter((i)=>Number.isFinite(i.lat) && Number.isFinite(i.lng));
+    }
+  } catch { /* cae a la API clásica */ }
+  // 2) API clásica (cuentas antiguas)
+  const u2 = new URL("https://atlas.microsoft.com/traffic/incident/detail/json");
+  u2.searchParams.set("api-version", "1.0");
+  u2.searchParams.set("bbox", bbox);
+  u2.searchParams.set("subscription-key", AZURE);
+  const r2 = await fetch(u2);
+  if (!r2.ok) {
+    const t = await r2.text().catch(()=>"");
+    throw new Error(`Azure ${r2.status}: ${t.slice(0, 160)}`);
+  }
+  const d2 = await r2.json();
+  return (d2?.tm?.poi ?? []).map((p)=>azMapIncident({
+    id: p.id,
+    lat: p.p?.y,
+    lng: p.p?.x,
+    iconCategory: p.ic,
+    title: p.d,
+    description: [p.f, p.t].filter(Boolean).join(" → ") || p.d,
+    delay: p.dl,
+    isRoadClosed: p.ic === 8
+  })).filter((i)=>Number.isFinite(i.lat) && Number.isFinite(i.lng));
+}
 async function mbRouteTry(points, prof) {
   const coords = points.map(([la, ln])=>`${ln},${la}`).join(";");
   const u = new URL(`https://api.mapbox.com/directions/v5/mapbox/${prof}/${coords}`);
@@ -666,7 +729,10 @@ Deno.serve(async (req)=>{
           provider: null,
           note: "SERVICIO NO CONFIGURADO"
         },
-        traffic_incidents: {
+        traffic_incidents: AZURE ? {
+          provider: "Azure Maps Traffic",
+          note: null
+        } : {
           provider: null,
           note: "SERVICIO NO CONFIGURADO"
         }
@@ -1583,6 +1649,18 @@ Deno.serve(async (req)=>{
       const route = await mbRoute(pts.slice(0, 25), b.mode ?? "car").catch(()=>null);
       if (!route) return err("UPSTREAM", "No se pudo calcular la ruta", 502);
       return json(route);
+    }
+    if (p === "/api/mobility/incidents" && req.method === "GET") {
+      const na = needAuth();
+      if (na) return na;
+      if (!AZURE) return err("SERVICE_NOT_CONFIGURED", "Incidencias de tráfico no configuradas", 503);
+      const minLat = Number(url.searchParams.get("min_lat")), minLng = Number(url.searchParams.get("min_lng"));
+      const maxLat = Number(url.searchParams.get("max_lat")), maxLng = Number(url.searchParams.get("max_lng"));
+      if (![minLat, minLng, maxLat, maxLng].every(Number.isFinite)) return err("BAD_REQUEST", "Falta el bbox (min_lat, min_lng, max_lat, max_lng)", 400);
+      if (Math.abs(maxLat - minLat) > 2 || Math.abs(maxLng - minLng) > 2) return err("BAD_REQUEST", "Zona demasiado grande", 400);
+      const out = await azIncidents(minLat, minLng, maxLat, maxLng).catch((e)=>({ __error: String(e?.message ?? e) }));
+      if (!Array.isArray(out)) return err("UPSTREAM", "El servicio de tráfico no respondió", 502, out.__error);
+      return json(out.slice(0, 200));
     }
     if (p === "/api/mobility/reverse" && req.method === "GET") {
       const na = needAuth();

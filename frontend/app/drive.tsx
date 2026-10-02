@@ -238,11 +238,13 @@ export default function Drive() {
 
       {/* Bottom tools */}
       <View style={[s.tools, { bottom: toolsBottom }]} pointerEvents="box-none">
-        <Tool testID="tool-stop" icon="add" label="Parada" on={overlay === "stop"} onPress={() => setOverlay(overlay === "stop" ? null : "stop")} />
-        <Tool testID="tool-group" icon="people" label={onTrip.size > 1 ? `Grupo ${onTrip.size}` : "Grupo"} on={overlay === "group"} onPress={() => setOverlay(overlay === "group" ? null : "group")} />
-        <Tool testID="tool-poi" icon="cafe" label="En ruta" on={overlay === "poi"} onPress={() => setOverlay(overlay === "poi" ? null : "poi")} />
-        <Tool testID="tool-traffic" icon="warning" label={onRoute.length ? `${onRoute.length}` : "Tráfico"} on={overlay === "traffic"} warn={onRoute.some((i) => i.road_closed)} onPress={() => setOverlay(overlay === "traffic" ? null : "traffic")} />
-        {!!dest && <Tool testID="tool-google" icon="logo-google" label="Google" onPress={() => Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${dest.lat},${dest.lng}${pos ? `&origin=${pos.lat},${pos.lng}` : ""}${stops.length ? `&waypoints=${stops.map((sp) => `${sp.lat},${sp.lng}`).join("|")}` : ""}&travelmode=${mode === "pedestrian" ? "walking" : mode === "bicycle" ? "bicycling" : "driving"}`)} />}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ flexDirection: "row", gap: spacing.sm }}>
+          <Tool testID="tool-stop" icon="add" label="Parada" on={overlay === "stop"} onPress={() => setOverlay(overlay === "stop" ? null : "stop")} />
+          <Tool testID="tool-group" icon="people" label={onTrip.size > 1 ? `Grupo ${onTrip.size}` : "Grupo"} on={overlay === "group"} onPress={() => setOverlay(overlay === "group" ? null : "group")} />
+          <Tool testID="tool-poi" icon="cafe" label="En ruta" on={overlay === "poi"} onPress={() => setOverlay(overlay === "poi" ? null : "poi")} />
+          <Tool testID="tool-traffic" icon="warning" label={onRoute.length ? `${onRoute.length}` : "Tráfico"} on={overlay === "traffic"} warn={onRoute.some((i) => i.road_closed)} onPress={() => setOverlay(overlay === "traffic" ? null : "traffic")} />
+          {!!dest && <Tool testID="tool-google" icon="logo-google" label="Google" onPress={() => Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${dest.lat},${dest.lng}${pos ? `&origin=${pos.lat},${pos.lng}` : ""}${stops.length ? `&waypoints=${stops.map((sp) => `${sp.lat},${sp.lng}`).join("|")}` : ""}&travelmode=${mode === "pedestrian" ? "walking" : mode === "bicycle" ? "bicycling" : "driving"}`)} />}
+        </ScrollView>
       </View>
       <View style={[s.fabs, { bottom: toolsBottom }]} pointerEvents="box-none">
         <SharingFab open={overlay === "sharing"} onPress={() => setOverlay(overlay === "sharing" ? null : "sharing")} />
@@ -272,7 +274,7 @@ const useStyles = makeStyles((c) => ({
   chipOn: { backgroundColor: c.brandPrimary, borderColor: c.brandPrimary },
   dotB: { width: 10, height: 10, borderRadius: 5 },
   check: { width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: c.borderStrong, alignItems: "center", justifyContent: "center" },
-  tools: { position: "absolute", left: spacing.md, right: spacing.md + 60, flexDirection: "row", gap: spacing.sm },
+  tools: { position: "absolute", left: spacing.md, right: spacing.md + 60 },
   tool: { flexDirection: "row", alignItems: "center", gap: 4, height: 44, paddingHorizontal: 12, borderRadius: radius.pill, backgroundColor: c.glassStrong, borderWidth: 1, borderColor: c.border, shadowColor: c.surfaceInverse, shadowOpacity: 0.15, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 4 },
   fabs: { position: "absolute", right: spacing.md, alignItems: "flex-end", gap: spacing.sm },
   fab: { width: 48, height: 48, borderRadius: 24, backgroundColor: c.glassStrong, borderWidth: 1, borderColor: c.border, alignItems: "center", justifyContent: "center", shadowColor: c.surfaceInverse, shadowOpacity: 0.15, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 4 },

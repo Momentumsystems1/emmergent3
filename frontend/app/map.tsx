@@ -24,6 +24,7 @@ import { GroupsRail } from "@/src/components/GroupsRail";
 import { MainMenu } from "@/src/components/MainMenu";
 import { MemberRail } from "@/src/components/MemberRail";
 import { MemberToolsSheet } from "@/src/components/MemberToolsSheet";
+import { Sheet } from "@/src/components/sheets";
 import { SharingPanel } from "@/src/components/SharingFab";
 import { SensorHUD } from "@/src/components/SensorHUD";
 import { useTelemetry } from "@/src/hooks/useTelemetry";
@@ -154,6 +155,38 @@ export default function MapHome() {
     if (!drive || followOff || !mePos) return;
     setFocus({ ...mePos, key: focus?.key ?? 1 });
   }, [drive, followOff, mePos?.lat, mePos?.lng]);
+
+  // Refresco periódico de MI posición: el FAB muestra la cuenta atrás (15 s por defecto, configurable);
+  // al llegar a 0 se vuelve a obtener el GPS, se sube si hay consentimiento, el mapa se centra en el punto real y el ciclo reinicia.
+  const [refreshSecs, setRefreshSecs] = useState(15);
+  const [refreshLeft, setRefreshLeft] = useState(15);
+  const [refreshCfg, setRefreshCfg] = useState(false);
+  const refreshSecsRef = useRef(15);
+  const refreshBusy = useRef(false);
+  useEffect(() => { refreshSecsRef.current = refreshSecs; setRefreshLeft(refreshSecs); }, [refreshSecs]);
+  useEffect(() => {
+    const t = setInterval(() => setRefreshLeft((v) => (v <= 0 ? 0 : v - 1)), 1000);
+    return () => clearInterval(t);
+  }, []);
+  useEffect(() => {
+    if (refreshLeft !== 0 || refreshBusy.current) return;
+    refreshBusy.current = true;
+    (async () => {
+      try {
+        if (loc.perm === "granted") {
+          const p = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+          const np = { lat: p.coords.latitude, lng: p.coords.longitude };
+          setMyPos(np);
+          if (sharesLocation) api("/location", { method: "POST", json: { lat: np.lat, lng: np.lng, accuracy: typeof p.coords.accuracy === "number" ? p.coords.accuracy : undefined } }).catch(() => null);
+          qc.invalidateQueries({ queryKey: ["positions"] });
+          setFollowOff(false);
+          setFocus({ ...np, key: Date.now() });
+        }
+      } catch { /* sin fix en este ciclo: se reintenta en el siguiente */ }
+      finally { refreshBusy.current = false; setRefreshLeft(refreshSecsRef.current); }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- el ciclo lo dispara solo la cuenta atrás
+  }, [refreshLeft]);
 
   // Trail de ubicación (base del cálculo de CO2): solo cuando comparto y con posición real
   useEffect(() => {
@@ -325,6 +358,10 @@ export default function MapHome() {
           {traffic && incidents.data?.length ? <View style={s.fabBadge}><T weight="bold" style={{ fontSize: 9, color: colors.onWarning }}>{Math.min(99, incidents.data.length)}</T></View> : null}
         </Pressable>
         <Pressable testID="fab-recenter" onPress={recenter} style={s.smallFab} accessibilityLabel="Centrar en mi ubicación"><Ionicons name="locate" size={18} color={mePos ? colors.brandPrimary : colors.muted} /></Pressable>
+        <Pressable testID="fab-refresh" onPress={() => { closeAll(); setRefreshCfg(true); }} style={s.smallFab} accessibilityLabel="Actualizar mi posición: configurar el intervalo">
+          <T weight="bold" style={{ fontSize: 16, lineHeight: 18, color: colors.brandPrimary }} testID="fab-refresh-count">{refreshLeft}</T>
+          <T style={{ fontSize: 8, lineHeight: 9, marginTop: -1, color: colors.muted }}>seg</T>
+        </Pressable>
       </View>
 
       {/* Modo Escolta (abajo-derecha, junto al SOS): un toque → trayecto protegido + detector de caída */}
@@ -424,6 +461,23 @@ export default function MapHome() {
         </Animated.View>
       ) : null}
       <MainMenu visible={mainMenu} onClose={() => setMainMenu(false)} groups={groups.data ?? []} />
+
+      {/* Configuración del refresco de posición: intervalo de la cuenta atrás del FAB */}
+      <Sheet visible={refreshCfg} onClose={() => setRefreshCfg(false)} testID="refresh-sheet">
+        <T weight="bold" style={{ fontSize: 20 }}>Actualizar mi posición</T>
+        <T style={{ color: colors.muted, fontSize: 13, marginTop: spacing.xs }}>Cada {refreshSecs} segundos se vuelve a obtener tu ubicación real, el mapa se centra en tu punto y el contador del botón vuelve a empezar.</T>
+        <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: spacing.md }}>
+          {[10, 15, 30, 60].map((v) => (
+            <Pressable key={v} testID={`refresh-opt-${v}`} onPress={() => setRefreshSecs(v)} style={[s.chip, refreshSecs === v && s.chipOn]}>
+              <T weight="semibold" style={{ fontSize: 13, color: refreshSecs === v ? colors.onBrandPrimary : colors.onSurface }}>{v} s</T>
+            </Pressable>
+          ))}
+        </View>
+        <View style={{ marginTop: spacing.lg, gap: spacing.sm }}>
+          <Button testID="refresh-now" title="Actualizar ahora" icon="refresh" onPress={() => { setRefreshCfg(false); setRefreshLeft(0); }} />
+          <Button testID="refresh-close" title="Cerrar" variant="ghost" onPress={() => setRefreshCfg(false)} />
+        </View>
+      </Sheet>
       <MemberToolsSheet member={memberSel} mePos={mePos} groupId={group?.id} onClose={() => setMemberSel(null)} onFocus={(m) => setFocus({ lat: m.lat!, lng: m.lng!, key: (focus?.key ?? 0) + 1 })} />
 
       {!group && groups.isSuccess && !sel ? (
@@ -468,6 +522,8 @@ const useStyles = makeStyles((c) => ({
   tool: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4, height: 38, borderRadius: radius.pill, backgroundColor: c.surfaceSecondary, borderWidth: 1, borderColor: c.border, paddingHorizontal: 4 },
   toolOn: { backgroundColor: c.brandPrimary, borderColor: c.brandPrimary },
   streetWrap: { position: "absolute", left: spacing.md, right: spacing.md, alignItems: "center" },
+  chip: { flex: 1, height: 40, borderRadius: radius.pill, backgroundColor: c.surfaceTertiary, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: c.border },
+  chipOn: { backgroundColor: c.brandPrimary, borderColor: c.brandPrimary },
   streetPill: { flexDirection: "row", alignItems: "center", gap: 6, maxWidth: "100%", backgroundColor: c.glassStrong, borderRadius: radius.pill, borderWidth: 1, borderColor: c.hairline, paddingHorizontal: 12, paddingVertical: 7, shadowColor: c.surfaceInverse, shadowOpacity: 0.16, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 4 },
   hint: { position: "absolute", left: spacing.md, right: spacing.md, alignItems: "flex-start" },
   hintBtn: { flexDirection: "row", alignItems: "center", gap: 6, height: 46, paddingHorizontal: 18, borderRadius: radius.pill, backgroundColor: c.brandPrimary, shadowColor: c.brandPrimary, shadowOpacity: 0.35, shadowRadius: 14, shadowOffset: { width: 0, height: 5 }, elevation: 4 },

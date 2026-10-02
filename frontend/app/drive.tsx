@@ -242,6 +242,7 @@ export default function Drive() {
         <Tool testID="tool-group" icon="people" label={onTrip.size > 1 ? `Grupo ${onTrip.size}` : "Grupo"} on={overlay === "group"} onPress={() => setOverlay(overlay === "group" ? null : "group")} />
         <Tool testID="tool-poi" icon="cafe" label="En ruta" on={overlay === "poi"} onPress={() => setOverlay(overlay === "poi" ? null : "poi")} />
         <Tool testID="tool-traffic" icon="warning" label={onRoute.length ? `${onRoute.length}` : "Tráfico"} on={overlay === "traffic"} warn={onRoute.some((i) => i.road_closed)} onPress={() => setOverlay(overlay === "traffic" ? null : "traffic")} />
+        {!!dest && <Tool testID="tool-google" icon="logo-google" label="Google" onPress={() => Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${dest.lat},${dest.lng}${pos ? `&origin=${pos.lat},${pos.lng}` : ""}${stops.length ? `&waypoints=${stops.map((sp) => `${sp.lat},${sp.lng}`).join("|")}` : ""}&travelmode=${mode === "pedestrian" ? "walking" : mode === "bicycle" ? "bicycling" : "driving"}`)} />}
       </View>
       <View style={[s.fabs, { bottom: toolsBottom }]} pointerEvents="box-none">
         <SharingFab open={overlay === "sharing"} onPress={() => setOverlay(overlay === "sharing" ? null : "sharing")} />

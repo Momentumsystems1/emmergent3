@@ -7,7 +7,7 @@ import Ionicons from "@react-native-vector-icons/ionicons";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
-import { Modal, Pressable, ScrollView, TextInput, View } from "react-native";
+import { Linking, Modal, Pressable, ScrollView, TextInput, View } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -109,8 +109,9 @@ export default function Navigate() {
               <View style={s.card} testID="route-summary">
                 <T weight="bold" numberOfLines={1}>🏁 {dest!.name}</T>
                 {route.isLoading ? <T style={{ color: colors.muted }}>Calculando ruta…</T> : route.data ? <T style={{ color: colors.muted, fontSize: 13 }}>{fmt(route.data.duration_s)} · {km(route.data.distance_m)} · retraso tráfico {fmt(route.data.delay_s)} · llegada {route.data.arrival ? new Date(route.data.arrival).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }) : "—"}</T> : <T style={{ color: colors.error, fontSize: 13 }}>{origin ? "Ruta no disponible para este modo" : "Falta tu ubicación de origen"}</T>}
-                <View style={{ marginTop: spacing.sm }}>
-                  <Button testID="nav-go" title="Ir" icon="navigate" onPress={() => router.push({ pathname: "/drive", params: { lat: String(dest!.lat), lng: String(dest!.lng), place: dest!.name, mode, stops: JSON.stringify(stops.map((st) => ({ name: st.label, lat: st.lat, lng: st.lng }))), ...(origin ? { fromLat: String(origin.lat), fromLng: String(origin.lng) } : {}) } })} />
+                <View style={{ flexDirection: "row", gap: 8, marginTop: spacing.sm }}>
+                  <View style={{ flex: 1 }}><Button testID="nav-go" title="Ir" icon="navigate" onPress={() => router.push({ pathname: "/drive", params: { lat: String(dest!.lat), lng: String(dest!.lng), place: dest!.name, mode, stops: JSON.stringify(stops.map((st) => ({ name: st.label, lat: st.lat, lng: st.lng }))), ...(origin ? { fromLat: String(origin.lat), fromLng: String(origin.lng) } : {}) } })} /></View>
+                  <View style={{ flex: 1 }}><Button testID="nav-google" title="Google" icon="logo-google" variant="secondary" onPress={() => Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${dest!.lat},${dest!.lng}${origin ? `&origin=${origin.lat},${origin.lng}` : ""}${stops.length ? `&waypoints=${stops.map((st) => `${st.lat},${st.lng}`).join("|")}` : ""}&travelmode=${mode === "pedestrian" ? "walking" : mode === "bicycle" ? "bicycling" : "driving"}`)} /></View>
                 </View>
               </View>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }} style={{ height: 44, flexGrow: 0 }}>

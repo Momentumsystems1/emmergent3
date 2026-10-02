@@ -5,7 +5,8 @@ import { Modal, Pressable, ScrollView, TextInput, View } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { Button, Pill, T } from "@/src/components/ui";
+import { copyText } from "@/src/clipboard";
+import { Button, Pill, T, toast } from "@/src/components/ui";
 import { fonts, makeStyles, radius, spacing, useTheme } from "@/src/theme";
 
 export function Sheet({ visible, onClose, children, testID }: { visible: boolean; onClose: () => void; children: React.ReactNode; testID: string }) {
@@ -53,8 +54,8 @@ export function AddMemberSheet({ visible, onClose, onSubmit, loading }: { visibl
       ) : null}
       <T weight="semibold" style={{ marginTop: spacing.lg }}>Canal de invitación</T>
       <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: spacing.sm }}>
-        <Option testID="channel-whatsapp" active={channel === "whatsapp"} onPress={() => setChannel("whatsapp")} title="WhatsApp" sub="Se abre WhatsApp con el enlace" icon="logo-whatsapp" />
-        <Option testID="channel-sms" active={channel === "sms"} onPress={() => setChannel("sms")} title="SMS" sub="Se abre Mensajes" icon="chatbox" />
+        <Option testID="channel-whatsapp" active={channel === "whatsapp"} onPress={() => setChannel("whatsapp")} title="WhatsApp" sub="Podrás copiar el enlace o abrir WhatsApp" icon="logo-whatsapp" />
+        <Option testID="channel-sms" active={channel === "sms"} onPress={() => setChannel("sms")} title="SMS" sub="Podrás copiar el enlace o abrir Mensajes" icon="chatbox" />
       </View>
       <T style={{ color: colors.muted, fontSize: 12, marginTop: spacing.md }}>MY CLUSTER no puede confirmar la entrega del mensaje: mostrará “Invitación preparada” hasta que la persona acepte.</T>
       <View style={{ marginTop: spacing.lg }}>
@@ -79,6 +80,32 @@ function Option({ active, onPress, title, sub, icon, testID }: { active: boolean
 
 export type MemberInfo = { id: string; display_name: string; status: string; membership: string; role: string; expires_at?: string | null; location_state?: string; user_id?: string | null; color?: string;
   invitation?: { id: string; status: string; channel: string; created_at: string; dispatched_at?: string | null } };
+
+// Resultado de crear una invitación: el enlace queda visible y copiable (esa era la queja: se veía solo dentro de WhatsApp).
+export function InviteCreatedSheet({ name, link, message, channel, onClose, onOpenChannel }: { name: string; link: string; message: string; channel: string; onClose: () => void; onOpenChannel: () => void }) {
+  const s = useStyles();
+  const { colors } = useTheme();
+  const copy = async (text: string, label: string) => {
+    const ok = await copyText(text);
+    toast(ok ? `${label} copiado` : "No se pudo copiar; mantén pulsado el enlace para seleccionarlo", ok ? "success" : "error");
+  };
+  return (
+    <Sheet visible onClose={onClose} testID="invite-created-sheet">
+      <T weight="bold" style={{ fontSize: 20 }}>Invitación lista para {name}</T>
+      <T style={{ color: colors.muted, fontSize: 13, marginTop: spacing.xs }}>Este es el enlace de la invitación: cópialo y pégalo donde quieras, o abre el canal directamente.</T>
+      <View style={s.linkBox}>
+        <Ionicons name="link" size={16} color={colors.brandPrimary} />
+        <T testID="invite-created-link" selectable style={{ fontSize: 13, flex: 1, color: colors.brandPrimary }}>{link}</T>
+      </View>
+      <View style={{ marginTop: spacing.lg, gap: spacing.sm }}>
+        <Button testID="invite-copy-link" title="Copiar enlace" icon="copy" onPress={() => copy(link, "Enlace")} />
+        <Button testID="invite-copy-message" title="Copiar mensaje completo" icon="chatbox" variant="secondary" onPress={() => copy(message, "Mensaje")} />
+        <Button testID="invite-open-channel" title={channel === "sms" ? "Abrir Mensajes" : "Abrir WhatsApp"} icon={channel === "sms" ? "chatbox" : "logo-whatsapp"} variant="secondary" onPress={onOpenChannel} />
+        <Button testID="invite-created-done" title="Listo" variant="ghost" onPress={onClose} />
+      </View>
+    </Sheet>
+  );
+}
 
 export function MemberSheet({ member, onClose, onResend, onCancel, onRemove, onChangeRole, canManage, changingRole }: { member: MemberInfo | null; onClose: () => void; onResend?: () => void; onCancel?: () => void; onRemove?: () => void; onChangeRole?: (role: string) => void; canManage: boolean; changingRole?: boolean }) {
   const { colors } = useTheme();
@@ -160,4 +187,5 @@ const useStyles = makeStyles((c) => ({
   chipOn: { backgroundColor: c.brandPrimary, borderColor: c.brandPrimary },
   roleRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, padding: spacing.md, borderRadius: radius.md, backgroundColor: c.surfaceTertiary, borderWidth: 1.5, borderColor: c.border },
   roleRowOn: { borderColor: c.brandPrimary, backgroundColor: c.surfaceSecondary },
+  linkBox: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginTop: spacing.md, padding: spacing.md, borderRadius: radius.md, backgroundColor: c.surfaceTertiary, borderWidth: 1, borderColor: c.border },
 }));

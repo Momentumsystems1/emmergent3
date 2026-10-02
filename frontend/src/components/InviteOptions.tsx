@@ -8,6 +8,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AppState, Linking, Platform, Pressable, Share, TextInput, View } from "react-native";
 
 import { api, unavailableOf } from "@/src/api";
+import { appOrigin, copyText } from "@/src/clipboard";
 import { Sheet } from "@/src/components/sheets";
 import { Button, showUnavailable, T, toast } from "@/src/components/ui";
 import { Invitation, inviteText } from "@/src/invites";
@@ -15,25 +16,38 @@ import { fonts, makeStyles, radius, spacing, useTheme } from "@/src/theme";
 
 type Contact = { id: string; name: string; phone: string };
 const digits = (p: string) => p.replace(/[^\d+]/g, "").replace(/^\+/, "");
+// Nombre de la invitación genérica para compartir por cualquier canal (se reutiliza mientras siga abierta).
+const GENERIC = "Invitado";
 
-export function InviteOptions({ groupId, groupName, onChanged }: { groupId: string; groupName: string; onChanged?: () => void }) {
+export function InviteOptions({ groupId, groupName, invitations, onChanged }: { groupId: string; groupName: string; invitations?: any[]; onChanged?: () => void }) {
   const s = useStyles(); const { colors } = useTheme();
   const [picker, setPicker] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
+  const [shown, setShown] = useState<string | null>(null);
 
-  const link = async () => {
-    const inv = await api<Invitation>(`/groups/${groupId}/invite-link`, { method: "POST" });
-    return `Únete a mi grupo "${groupName}" en MY CLUSTER. Toca el enlace para entrar: ${inv.link}`;
+  // Enlace compartible: reutiliza la invitación genérica abierta o crea una con el endpoint real del backend.
+  const link = async (): Promise<Invitation> => {
+    const reuse = (invitations ?? []).find((i) => i.invitee_name === GENERIC && (i.status === "prepared" || i.status === "dispatched") && (!i.expires_at || new Date(i.expires_at).getTime() > Date.now()));
+    if (reuse) return { id: reuse.token, name: GENERIC, channel: "link", status: reuse.status, multi: true, link: `${appOrigin()}/invite/${reuse.token}`, group_name: groupName, membership: reuse.membership ?? "fixed" };
+    const r = await api<{ invitation: Invitation }>(`/groups/${groupId}/invitations`, { method: "POST", json: { name: GENERIC, membership: "fixed", channel: "link" } });
+    onChanged?.();
+    return { ...r.invitation, group_name: groupName };
   };
+  const msgOf = (inv: Invitation) => `Únete a mi grupo "${groupName}" en MY CLUSTER. Toca el enlace para entrar: ${inv.link}`;
   const viaWhatsApp = async () => {
     setBusy("wa");
-    try { await Linking.openURL(`https://wa.me/?text=${encodeURIComponent(await link())}`); toast("Elige un chat o un grupo de WhatsApp; quien toque el enlace entra al grupo"); }
+    try { const inv = await link(); setShown(inv.link); await Linking.openURL(`https://wa.me/?text=${encodeURIComponent(msgOf(inv))}`); toast("Elige un chat o un grupo de WhatsApp; el enlace también lo tienes aquí para copiarlo"); }
     catch (e: any) { toast(e.message ?? "No se pudo abrir WhatsApp", "error"); } finally { setBusy(null); }
   };
   const viaShare = async () => {
     setBusy("share");
-    try { const text = await link(); if (Platform.OS === "web") { await Linking.openURL(`mailto:?body=${encodeURIComponent(text)}`); } else { await Share.share({ message: text }); } }
+    try { const inv = await link(); setShown(inv.link); const text = msgOf(inv); if (Platform.OS === "web") { await Linking.openURL(`mailto:?body=${encodeURIComponent(text)}`); } else { await Share.share({ message: text }); } }
     catch (e: any) { toast(e.message ?? "No se pudo compartir", "error"); } finally { setBusy(null); }
+  };
+  const viaCopy = async () => {
+    setBusy("copy");
+    try { const inv = await link(); setShown(inv.link); const ok = await copyText(inv.link); toast(ok ? "Enlace copiado" : "No se pudo copiar; mantén pulsado el enlace para seleccionarlo", ok ? "success" : "error"); }
+    catch (e: any) { toast(e.message ?? "No se pudo crear el enlace", "error"); } finally { setBusy(null); }
   };
   return (
     <View style={{ gap: spacing.sm }} testID="invite-options">
@@ -41,8 +55,15 @@ export function InviteOptions({ groupId, groupName, onChanged }: { groupId: stri
         <Pressable testID="invite-link-whatsapp" onPress={viaWhatsApp} disabled={!!busy} style={[s.opt, { flex: 1 }]}><Ionicons name="logo-whatsapp" size={18} color={colors.success} /><T weight="semibold" style={{ fontSize: 13 }}>Enlace por WhatsApp</T></Pressable>
         <Pressable testID="invite-link-share" onPress={viaShare} disabled={!!busy} style={[s.opt, { flex: 1 }]}><Ionicons name="share-social" size={18} color={colors.brandSecondary} /><T weight="semibold" style={{ fontSize: 13 }}>WeChat y otras</T></Pressable>
       </View>
+      <Pressable testID="invite-link-copy" onPress={viaCopy} disabled={!!busy} style={s.opt}><Ionicons name="copy" size={18} color={colors.brandPrimary} /><T weight="semibold" style={{ fontSize: 13 }}>Copiar enlace de invitación</T><T style={{ fontSize: 11, color: colors.muted, flex: 1, textAlign: "right" }}>para pegarlo donde quieras</T></Pressable>
+      {shown ? (
+        <View style={s.linkBox} testID="invite-shown-box">
+          <Ionicons name="link" size={16} color={colors.brandPrimary} />
+          <T testID="invite-shown-link" selectable style={{ fontSize: 12.5, flex: 1, color: colors.brandPrimary }}>{shown}</T>
+        </View>
+      ) : null}
       <Pressable testID="invite-from-contacts" onPress={() => setPicker(true)} style={s.opt}><Ionicons name="people-circle" size={18} color={colors.brandPrimary} /><T weight="semibold" style={{ fontSize: 13 }}>Elegir de mis contactos</T><T style={{ fontSize: 11, color: colors.muted, flex: 1, textAlign: "right" }}>varios a la vez</T></Pressable>
-      <T style={{ fontSize: 11, color: colors.muted }}>El enlace de grupo sirve para un chat o grupo entero: cada persona que lo toque se une (límite según tu plan).</T>
+      <T style={{ fontSize: 11, color: colors.muted }}>Quien reciba el enlace podrá unirse al grupo desde el navegador. Si un enlace deja de funcionar, vuelve a esta pantalla y genera otro.</T>
       <ContactsPicker visible={picker} onClose={() => { setPicker(false); onChanged?.(); }} groupId={groupId} groupName={groupName} />
     </View>
   );
@@ -154,4 +175,5 @@ const useStyles = makeStyles((c) => ({
   input: { height: 48, borderRadius: radius.md, backgroundColor: c.surfaceSecondary, borderWidth: 1, borderColor: c.border, paddingHorizontal: spacing.md, fontFamily: fonts.regular, fontSize: 15, color: c.onSurface, marginTop: spacing.md },
   row: { flexDirection: "row", alignItems: "center", gap: spacing.md, paddingVertical: 10, borderBottomWidth: 1, borderColor: c.divider },
   check: { width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: c.borderStrong, alignItems: "center", justifyContent: "center" },
+  linkBox: { flexDirection: "row", alignItems: "center", gap: spacing.sm, padding: spacing.md, borderRadius: radius.md, backgroundColor: c.surfaceTertiary, borderWidth: 1, borderColor: c.border },
 }));

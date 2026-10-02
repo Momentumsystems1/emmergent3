@@ -8,11 +8,12 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api, unavailableOf } from "@/src/api";
 import { useAuth } from "@/src/auth";
+import { appOrigin, copyText } from "@/src/clipboard";
 import { InviteOptions } from "@/src/components/InviteOptions";
 import { OrbitalField } from "@/src/components/OrbitalField";
-import { AddMemberSheet, MemberInfo, MemberSheet } from "@/src/components/sheets";
+import { AddMemberSheet, InviteCreatedSheet, MemberInfo, MemberSheet } from "@/src/components/sheets";
 import { Button, Pill, SectionLabel, showUnavailable, T, toast } from "@/src/components/ui";
-import { dispatchInvitation } from "@/src/invites";
+import { dispatchInvitation, Invitation, inviteText } from "@/src/invites";
 import { fonts, makeStyles, radius, spacing, useTheme } from "@/src/theme";
 
 const confirmDelete = (title: string, msg: string, onOk: () => void) => {
@@ -31,6 +32,7 @@ export default function GroupDetail() {
   const { width } = useWindowDimensions();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  const [created, setCreated] = useState<Invitation | null>(null);
   const [renaming, setRenaming] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
   const [view, setView] = useState<"members" | "events">(tab === "events" ? "events" : "members");
@@ -44,13 +46,23 @@ export default function GroupDetail() {
 
   const invite = useMutation({
     mutationFn: (v: any) => api<any>(`/groups/${id}/invitations`, { method: "POST", json: v }),
-    onSuccess: async (r) => {
+    onSuccess: (r) => {
       setAdding(false); refresh();
-      const res = await dispatchInvitation({ ...r.invitation });
-      toast(`${r.invitation.name}: ${res.label}`, res.ok ? "success" : "error"); refresh();
+      // El enlace se muestra primero dentro de la app (visible y copiable); el canal se abre a elección del usuario.
+      setCreated({ ...r.invitation });
     },
     onError: (e) => { const u = unavailableOf(e); if (u) { setAdding(false); showUnavailable(u); } else toast((e as any).message, "error"); },
   });
+  const openCreatedChannel = async () => {
+    if (!created) return;
+    const res = await dispatchInvitation({ ...created });
+    toast(`${created.name}: ${res.label}`, res.ok ? "success" : "error");
+    setCreated(null); refresh();
+  };
+  const copyInviteToken = async (token: string) => {
+    const ok = await copyText(`${appOrigin()}/invite/${token}`);
+    toast(ok ? "Enlace copiado" : "No se pudo copiar el enlace", ok ? "success" : "error");
+  };
   const rename = useMutation({
     mutationFn: (name: string) => api(`/groups/${id}`, { method: "PATCH", json: { name } }),
     onSuccess: () => { setRenaming(false); refresh(); }, onError: (e: any) => toast(e.message, "error"),
@@ -74,6 +86,7 @@ export default function GroupDetail() {
   });
 
   const group = g.data;
+  const pendingInvites = ((group?.invitations ?? []) as any[]).filter((i) => i.status === "prepared" || i.status === "dispatched");
   const selected: MemberInfo | null = group?.members.find((m: any) => m.id === selectedId) ?? null;
   const size = Math.min(width - spacing.xl * 2, 320);
   const isOwner = group?.owner_id === user?.id;
@@ -132,7 +145,24 @@ export default function GroupDetail() {
                   </View>
                 </Pressable>
               ))}
-              {canManage ? (<><SectionLabel style={{ marginTop: spacing.xl, marginBottom: spacing.xs }}>Invitar</SectionLabel><InviteOptions groupId={id!} groupName={group.name} onChanged={() => qc.invalidateQueries({ queryKey: ["group", id] })} /></>) : null}
+              {canManage && pendingInvites.length ? (
+                <>
+                  <SectionLabel style={{ marginTop: spacing.xl, marginBottom: spacing.xs }}>Invitaciones pendientes</SectionLabel>
+                  {pendingInvites.map((iv) => (
+                    <View key={iv.token} style={s.row} testID={`invite-row-${iv.token}`}>
+                      <Ionicons name="link" size={18} color={colors.brandPrimary} />
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <T weight="semibold" numberOfLines={1}>{iv.invitee_name}</T>
+                        <T style={{ fontSize: 12, color: colors.muted }} numberOfLines={1}>{iv.status === "dispatched" ? "Enviada" : "Preparada"}{iv.expires_at ? ` · expira ${new Date(iv.expires_at).toLocaleDateString("es-ES")}` : ""}</T>
+                      </View>
+                      <Pressable testID={`invite-copy-${iv.token}`} onPress={() => copyInviteToken(iv.token)} style={s.iconBtn} accessibilityLabel="Copiar enlace de invitación">
+                        <Ionicons name="copy" size={18} color={colors.onSurface} />
+                      </Pressable>
+                    </View>
+                  ))}
+                </>
+              ) : null}
+              {canManage ? (<><SectionLabel style={{ marginTop: spacing.xl, marginBottom: spacing.xs }}>Invitar</SectionLabel><InviteOptions groupId={id!} groupName={group.name} invitations={group.invitations ?? []} onChanged={() => qc.invalidateQueries({ queryKey: ["group", id] })} /></>) : null}
               <SectionLabel style={{ marginTop: spacing.xl, marginBottom: spacing.xs }}>Coordinación</SectionLabel>
               <View style={{ flexDirection: "row", gap: spacing.sm }}>
                 <Button small testID="group-new-meeting" title="Quedar" icon="calendar" variant="secondary" onPress={() => router.push({ pathname: "/meeting/new", params: { group: id } })} />
@@ -161,6 +191,10 @@ export default function GroupDetail() {
         ) : null}
       </ScrollView>
       <AddMemberSheet visible={adding} onClose={() => setAdding(false)} loading={invite.isPending} onSubmit={(v) => invite.mutate(v)} />
+      {created ? (
+        <InviteCreatedSheet name={created.name} link={created.link} message={inviteText(created)} channel={created.channel}
+          onClose={() => setCreated(null)} onOpenChannel={openCreatedChannel} />
+      ) : null}
       <MemberSheet member={selected} onClose={() => setSelectedId(null)} canManage={!!canManage} changingRole={changeRole.isPending}
         onResend={() => selected?.invitation && act.mutate({ path: `/invitations/${selected.invitation.id}/resend` })}
         onCancel={() => selected?.invitation && act.mutate({ path: `/invitations/${selected.invitation.id}/cancel` })}

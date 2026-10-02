@@ -9,8 +9,8 @@ import { LatLng, MapCircle, MapPerson } from "@/src/components/mapTypes";
 import { UserPhoto } from "@/src/components/UserPhoto";
 import { fonts, useTheme } from "@/src/theme";
 
-const SIZE = 300; // diámetro del dial
-const R = SIZE / 2 - 26; // radio útil donde se dibujan avatares
+const SIZE = 260; // diámetro del dial (panel inferior: el mapa sigue visible arriba)
+const R = SIZE / 2 - 22; // radio útil donde se dibujan avatares
 const AV = 34; // tamaño de avatar en el dial
 
 // Distancia haversine en metros.
@@ -91,8 +91,9 @@ export function CompassOverlay({ zone, people, onClose }: { zone: MapCircle; peo
 }
 
 const st = StyleSheet.create({
-  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.55)", alignItems: "center", justifyContent: "center", zIndex: 40 },
-  card: { borderWidth: 1, borderRadius: 18, padding: 16, alignItems: "center", width: SIZE + 32 },
+  // Pantalla dividida: el telar ocupa solo la mitad inferior; el mapa queda a la vista.
+  backdrop: { ...StyleSheet.absoluteFillObject, justifyContent: "flex-end", zIndex: 40 },
+  card: { borderWidth: 1, borderBottomWidth: 0, borderTopLeftRadius: 22, borderTopRightRadius: 22, padding: 16, paddingBottom: 26, alignItems: "center", alignSelf: "stretch" },
   title: { fontFamily: fonts.bold, fontSize: 16, marginBottom: 10 },
   dialWrap: { width: SIZE, height: SIZE, alignItems: "center", justifyContent: "center" },
   ring: { position: "absolute", borderWidth: 1 },

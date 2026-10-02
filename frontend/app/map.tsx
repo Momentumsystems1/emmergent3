@@ -401,7 +401,7 @@ export default function MapHome() {
             <T weight="bold" style={{ fontSize: 14, flex: 1 }}>{incidents.isLoading ? "Buscando incidencias…" : incidents.isError ? "Incidencias no disponibles" : `${incidents.data?.length ?? 0} incidencias en la zona`}</T>
             <Pressable testID="traffic-close" onPress={() => setTrafficPanel(false)} hitSlop={8} style={s.closeBtn}><Ionicons name="close" size={16} color={colors.onSurface} /></Pressable>
           </View>
-          <T style={{ fontSize: 11, color: colors.muted, marginTop: 2 }}>{incidents.isError ? "Servicio de incidencias de tráfico no configurado en esta versión." : "Capa de incidencias de tráfico activa. Toca una incidencia para verla."}</T>
+          <T style={{ fontSize: 11, color: colors.muted, marginTop: 2 }}>{incidents.isError ? "No se pudieron cargar las incidencias. Inténtalo de nuevo en unos segundos." : "Capa de incidencias de tráfico activa. Toca una incidencia para verla."}</T>
           <ScrollView style={{ maxHeight: 200, marginTop: spacing.sm }} showsVerticalScrollIndicator={false}>
             {(incidents.data ?? []).slice(0, 12).map((i) => (
               <Pressable key={i.id} testID={`incident-row-${i.id}`} onPress={() => { setFocus({ lat: i.lat, lng: i.lng, key: (focus?.key ?? 0) + 1 }); setIncSel(i); setTrafficPanel(false); }} style={s.incRow}>

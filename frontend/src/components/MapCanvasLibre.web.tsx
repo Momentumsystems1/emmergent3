@@ -163,7 +163,7 @@ const streetKey = (p: MapPerson) => `${p.member_id}:${(p.lat ?? 0).toFixed(4)}:$
 export function MapLibreCanvas(props: MapCanvasProps) {
   const {
     people, pins = [], polyline, circles = [], draftCircle,
-    onPersonPress, center, onMapPress, onMapLongPress, onCirclePress, drive, onUserPan,
+    onPersonPress, center, onMapPress, onMapLongPress, onCirclePress, drive, onUserPan, onMoveChange,
     selected, incidents = [], onIncidentPress,
   } = props;
   const { colors, scheme } = useTheme();
@@ -179,8 +179,8 @@ export function MapLibreCanvas(props: MapCanvasProps) {
   const located = people.filter((p) => p.lat != null && p.lng != null);
 
   // Refresco de handlers: el boot corre una sola vez, pero los handlers deben ver siempre el render actual.
-  const handlersRef = useRef({ onMapPress, onMapLongPress, onCirclePress, onUserPan, circles });
-  handlersRef.current = { onMapPress, onMapLongPress, onCirclePress, onUserPan, circles };
+  const handlersRef = useRef({ onMapPress, onMapLongPress, onCirclePress, onUserPan, onMoveChange, circles });
+  handlersRef.current = { onMapPress, onMapLongPress, onCirclePress, onUserPan, onMoveChange, circles };
 
   // ---- boot (una vez) ----
   useEffect(() => {
@@ -241,6 +241,8 @@ export function MapLibreCanvas(props: MapCanvasProps) {
           h.onMapPress?.(snapToLogicalPlace(map, e));
         });
         map.on("dragstart", () => handlersRef.current.onUserPan?.());
+        map.on("movestart", () => handlersRef.current.onMoveChange?.(true));
+        map.on("moveend", () => handlersRef.current.onMoveChange?.(false));
         // Pulsación larga con ratón Y con el dedo (touchstart): sin esto, en el móvil no existía.
         const startLp = (e: any) => { clearTimeout(lpTimer); lpTimer = setTimeout(() => { lpPending = true; lpAt = Date.now(); handlersRef.current.onMapLongPress?.({ lat: e.lngLat.lat, lng: e.lngLat.lng }); }, 550); };
         map.on("mousedown", (e: any) => { if (Date.now() < touchUntil) return; startLp(e); });

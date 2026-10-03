@@ -35,6 +35,8 @@ export type MapCanvasProps = {
   drive?: DriveState | null;
   /** User dragged the map (native only) → callers typically stop following. */
   onUserPan?: () => void;
+  /** El mapa empieza/deja de moverse (web): para ocultar/mostrar tarjetas mientras se explora. */
+  onMoveChange?: (moving: boolean) => void;
   selected?: LatLng | null;
   /** Azure traffic flow + incident tiles overlay (native). */
   traffic?: boolean;

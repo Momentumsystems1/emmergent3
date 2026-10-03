@@ -7,6 +7,7 @@ const ANON = Deno.env.get("SUPABASE_ANON_KEY");
 const SVC = Deno.env.get("SENTINEL_SERVICE_KEY");
 const MAPBOX = Deno.env.get("MAPBOX_TOKEN");
 const AZURE = Deno.env.get("AZURE_MAPS_KEY");
+const TOMTOM = Deno.env.get("TOMTOM_KEY");
 
 // ---- Documentos legales servidos por la API (versionados aqui; sin tabla dedicada) ----
 const LEGAL_DOCS: Record<string, { title: string; version: string; status: string; body: string[] }> = {
@@ -446,6 +447,68 @@ function azMapIncident(o) {
     jam: type === "Jam"
   };
 }
+// ---- TomTom Traffic Incidents (fuente primaria; Azure queda como respaldo) ----
+// Caché en caliente por mosaico de 0.1° (los datos de tráfico se actualizan ~cada 2 min):
+// todos los usuarios que miran la misma zona comparten una sola llamada a TomTom.
+const INC_TTL_MS = 120_000;
+const INC_CACHE = new Map<string, { t: number; data: unknown[] }>();
+function incTile(minLat: number, minLng: number, maxLat: number, maxLng: number) {
+  return {
+    a: Math.floor(minLat * 10) / 10, b: Math.floor(minLng * 10) / 10,
+    c: Math.ceil(maxLat * 10) / 10, d: Math.ceil(maxLng * 10) / 10
+  };
+}
+function ttFirstPoint(g: any): [number, number] | null {
+  const c = g?.coordinates;
+  if (!Array.isArray(c) || !c.length) return null;
+  let cur: any = c;
+  while (Array.isArray(cur[0])) cur = cur[0];
+  return typeof cur[0] === "number" && typeof cur[1] === "number" ? [cur[1], cur[0]] : null; // [lat, lng]
+}
+async function ttIncidents(minLat: number, minLng: number, maxLat: number, maxLng: number) {
+  const t = incTile(minLat, minLng, maxLat, maxLng);
+  const key = `${t.a},${t.b},${t.c},${t.d}`;
+  const hit = INC_CACHE.get(key);
+  if (hit && Date.now() - hit.t < INC_TTL_MS) return hit.data;
+  const u = new URL("https://api.tomtom.com/traffic/services/5/incidentDetails");
+  u.searchParams.set("bbox", `${t.b},${t.a},${t.d},${t.c}`);
+  u.searchParams.set("fields", "{incidents{type,geometry{type,coordinates},properties{id,iconCategory,magnitudeOfDelay,events{description},from,to,delay}}}");
+  u.searchParams.set("language", "es-ES");
+  u.searchParams.set("timeValidityFilter", "present");
+  u.searchParams.set("key", TOMTOM!);
+  const r = await fetch(u);
+  if (!r.ok) {
+    const txt = await r.text().catch(() => "");
+    throw new Error(`TomTom ${r.status}: ${txt.slice(0, 160)}`);
+  }
+  const d = await r.json();
+  const out = (d?.incidents ?? []).map((f: any) => {
+    const pt = ttFirstPoint(f.geometry);
+    if (!pt) return null;
+    const p = f.properties ?? {};
+    const type = AZ_ICON[p.iconCategory ?? 0] ?? "Miscellaneous";
+    const desc = p.events?.[0]?.description as string | undefined;
+    const path = [p.from, p.to].filter(Boolean).join(" → ");
+    return {
+      id: String(p.id ?? crypto.randomUUID()),
+      lat: pt[0],
+      lng: pt[1],
+      type,
+      title: path || desc || undefined,
+      description: desc && desc !== path ? desc : undefined,
+      severity: typeof p.magnitudeOfDelay === "number" ? p.magnitudeOfDelay : undefined,
+      delay_s: typeof p.delay === "number" ? Math.round(p.delay) : undefined,
+      road_closed: type === "RoadClosure",
+      jam: type === "Jam"
+    };
+  }).filter(Boolean);
+  INC_CACHE.set(key, { t: Date.now(), data: out });
+  if (INC_CACHE.size > 200) { // limpieza simple
+    const oldest = [...INC_CACHE.entries()].sort((x, y) => x[1].t - y[1].t).slice(0, 50);
+    for (const [k] of oldest) INC_CACHE.delete(k);
+  }
+  return out;
+}
 async function azIncidents(minLat, minLng, maxLat, maxLng) {
   const bbox = `${minLng},${minLat},${maxLng},${maxLat}`;
   // 1) API actual (GeoJSON)
@@ -729,7 +792,10 @@ Deno.serve(async (req)=>{
           provider: null,
           note: "SERVICIO NO CONFIGURADO"
         },
-        traffic_incidents: AZURE ? {
+        traffic_incidents: TOMTOM ? {
+          provider: "TomTom Traffic",
+          note: null
+        } : AZURE ? {
           provider: "Azure Maps Traffic",
           note: null
         } : {
@@ -1653,12 +1719,12 @@ Deno.serve(async (req)=>{
     if (p === "/api/mobility/incidents" && req.method === "GET") {
       const na = needAuth();
       if (na) return na;
-      if (!AZURE) return err("SERVICE_NOT_CONFIGURED", "Incidencias de tráfico no configuradas", 503);
+      if (!TOMTOM && !AZURE) return err("SERVICE_NOT_CONFIGURED", "Incidencias de tráfico no configuradas", 503);
       const minLat = Number(url.searchParams.get("min_lat")), minLng = Number(url.searchParams.get("min_lng"));
       const maxLat = Number(url.searchParams.get("max_lat")), maxLng = Number(url.searchParams.get("max_lng"));
       if (![minLat, minLng, maxLat, maxLng].every(Number.isFinite)) return err("BAD_REQUEST", "Falta el bbox (min_lat, min_lng, max_lat, max_lng)", 400);
       if (Math.abs(maxLat - minLat) > 2 || Math.abs(maxLng - minLng) > 2) return err("BAD_REQUEST", "Zona demasiado grande", 400);
-      const out = await azIncidents(minLat, minLng, maxLat, maxLng).catch((e)=>({ __error: String(e?.message ?? e) }));
+      const out = await (TOMTOM ? ttIncidents(minLat, minLng, maxLat, maxLng) : azIncidents(minLat, minLng, maxLat, maxLng)).catch((e)=>({ __error: String(e?.message ?? e) }));
       if (!Array.isArray(out)) return err("UPSTREAM", "El servicio de tráfico no respondió", 502, out.__error);
       return json(out.slice(0, 200));
     }

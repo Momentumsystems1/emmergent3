@@ -135,6 +135,11 @@ const CATALOG = [
     why: "Botón SOS y avisos de zonas seguras"
   },
   {
+    key: "agenda",
+    label: "Agenda",
+    why: "Ver el detalle de tus quedadas (qué y con quién), no solo las horas"
+  },
+  {
     key: "camera",
     label: "Cámara",
     why: "Foto de perfil y evidencias de emergencia"
@@ -718,6 +723,29 @@ async function gAutocomplete(q, lat, lng, limit = 6) {
       municipality: comp.locality ?? undefined
     };
     if (lat != null && lng != null) o.distance_m = Math.round(hav(lat, lng, la, ln));
+    out.push(o);
+  }
+  return out;
+}
+async function gNearby(lat, lng, radiusM = 150) {
+  if (!GMAPS) return null;
+  const r = await fetch("https://places.googleapis.com/v1/places:searchNearby", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Goog-Api-Key": GMAPS,
+      "X-Goog-FieldMask": "places.displayName,places.location,places.formattedAddress,places.primaryType" },
+    body: JSON.stringify({
+      maxResultCount: 5, rankPreference: "DISTANCE", languageCode: "es", regionCode: "ES",
+      locationRestriction: { circle: { center: { latitude: lat, longitude: lng }, radius: Math.min(radiusM, 500) } }
+    })
+  });
+  if (!r.ok) return null;
+  const d = await r.json();
+  const out = [];
+  for (const pl of d.places ?? []) {
+    const la = pl.location?.latitude, ln = pl.location?.longitude;
+    if (typeof la !== "number" || typeof ln !== "number") continue;
+    const o = { name: pl.displayName?.text ?? pl.formattedAddress ?? "Lugar", address: pl.formattedAddress ?? undefined,
+      lat: la, lng: ln, kind: pl.primaryType ?? "place", distance_m: Math.round(hav(lat, lng, la, ln)) };
     out.push(o);
   }
   return out;
@@ -1598,6 +1626,13 @@ Deno.serve(async (req)=>{
           place = place ?? found[0].name;
         }
       }
+      let scheduledAt = null;
+      if (b.scheduled_at != null) {
+        const t = new Date(b.scheduled_at);
+        if (Number.isNaN(t.getTime())) return err("BAD_REQUEST", "scheduled_at no es una fecha válida", 400);
+        scheduledAt = t.toISOString();
+      }
+      const durationMin = Math.max(15, Math.min(Number(b.duration_min) || 60, 720));
       const ins = await restJ(req, "meetings", {
         method: "POST",
         body: JSON.stringify({
@@ -1606,16 +1641,26 @@ Deno.serve(async (req)=>{
           place_name: place,
           lat,
           lng,
+          scheduled_at: scheduledAt,
+          duration_min: durationMin,
           created_by: sub
         })
       });
       if (ins.status >= 400) return err("FORBIDDEN", "No se pudo crear la quedada", ins.status, JSON.stringify(ins.body).slice(0, 200));
       const m = Array.isArray(ins.body) ? ins.body[0] : ins.body;
       const mem = await restJ(req, `group_members?group_id=eq.${b.group_id}&status=eq.active&select=user_id`);
-      const rows = (Array.isArray(mem.body) ? mem.body : []).map((x)=>({
+      const activeIds = (Array.isArray(mem.body) ? mem.body : []).map((x)=>x.user_id);
+      // Invitados: subconjunto elegido (Todos/Cercanos/Manual) o, por defecto, todo el grupo. El organizador siempre entra.
+      let target = activeIds;
+      if (Array.isArray(b.invitees) && b.invitees.length) {
+        const chosen = new Set(b.invitees.filter((x)=> typeof x === "string" && activeIds.includes(x)));
+        chosen.add(sub);
+        target = [...chosen];
+      }
+      const rows = target.map((uid)=>({
           meeting_id: m.id,
-          user_id: x.user_id,
-          state: x.user_id === sub ? "aceptado" : "invitado"
+          user_id: uid,
+          state: uid === sub ? "aceptado" : "invitado"
         }));
       if (rows.length) await restJ(req, "meeting_participants", {
         method: "POST",
@@ -1633,6 +1678,50 @@ Deno.serve(async (req)=>{
       if (na) return na;
       const r = await restJ(req, `meetings?group_id=eq.${meetList[1]}&order=created_at.desc&limit=20&select=*`);
       return json(Array.isArray(r.body) ? r.body : []);
+    }
+    const agendaMatch = p.match(new RegExp(`^/api/groups/${UUID_RE}/agenda$`));
+    if (agendaMatch && req.method === "GET") {
+      const na = needAuth();
+      if (na) return na;
+      const gid = agendaMatch[1];
+      // Solo miembros activos del grupo pueden consultar la agenda del grupo
+      const mine = await restJ(req, `group_members?group_id=eq.${gid}&user_id=eq.${sub}&status=eq.active&select=user_id`);
+      if (!Array.isArray(mine.body) || !mine.body.length) return err("FORBIDDEN", "No perteneces a este grupo", 403);
+      const mem = await restJ(req, `group_members?group_id=eq.${gid}&status=eq.active&select=user_id,profile:profiles(display_name,avatar_color)`);
+      const members = (Array.isArray(mem.body) ? mem.body : []).map((x)=>({ user_id: x.user_id, name: x.profile?.display_name ?? "Miembro", color: x.profile?.avatar_color ?? "#64748B" }));
+      const meets = await restJ(req, `meetings?group_id=eq.${gid}&status=eq.active&select=id,name,place_name,scheduled_at,duration_min,created_at,created_by,participants:meeting_participants(user_id,state)&order=created_at.desc&limit=50`);
+      const meetings = Array.isArray(meets.body) ? meets.body : [];
+      // Permiso de agenda por miembro: último evento permission='agenda'
+      const ids = members.map((x)=>x.user_id);
+      let agendaGranted = {};
+      if (ids.length) {
+        const ev = await restJ(req, `permission_events?user_id=in.(${ids.join(",")})&permission=eq.agenda&order=created_at.desc&select=user_id,granted,created_at&limit=200`);
+        for (const e of (Array.isArray(ev.body) ? ev.body : [])) if (!(e.user_id in agendaGranted)) agendaGranted[e.user_id] = !!e.granted;
+      }
+      const nowMs = Date.now();
+      const out = members.map((mb)=>{
+        const mine2 = meetings.filter((mt)=>{
+          if (!(mt.participants ?? []).some((pt)=>pt.user_id === mb.user_id)) return false;
+          // Quedadas ya terminadas (fin = inicio + duración) dejan de contar en el badge
+          if (!mt.scheduled_at) return true; // legado sin fecha: activa hasta cerrarse
+          const endMs = new Date(mt.scheduled_at).getTime() + (Number(mt.duration_min) || 60) * 60000;
+          return Number.isFinite(endMs) && endMs >= nowMs;
+        });
+        const slots = mine2.map((mt)=>{
+          const start = mt.scheduled_at ?? mt.created_at;
+          const dur = Number(mt.duration_min) || 60;
+          const end = start ? new Date(new Date(start).getTime() + dur * 60000).toISOString() : null;
+          const iAmIn = (mt.participants ?? []).some((pt)=>pt.user_id === sub);
+          const canSee = mt.created_by === sub || iAmIn || agendaGranted[mb.user_id] === true || mb.user_id === sub;
+          const myPart = (mt.participants ?? []).find((pt)=>pt.user_id === mb.user_id);
+          return {
+            start, end,
+            detail: canSee ? { meeting_id: mt.id, name: mt.name, place: mt.place_name ?? null, state: myPart?.state ?? null, sent_by_me: mt.created_by === sub } : null
+          };
+        });
+        return { user_id: mb.user_id, name: mb.name, color: mb.color, count: mine2.length, slots };
+      });
+      return json({ group_id: gid, agenda: out });
     }
     const meetGet = p.match(new RegExp(`^/api/meetings/${UUID_RE}$`));
     if (meetGet && req.method === "GET") {
@@ -1699,6 +1788,8 @@ Deno.serve(async (req)=>{
         name: m.name,
         status: m.status,
         group_id: m.group_id,
+        scheduled_at: m.scheduled_at ?? null,
+        duration_min: m.duration_min ?? 60,
         is_organizer: m.created_by === sub,
         deep_link: `sentinel://meeting/${m.id}`,
         destination: m.lat != null ? {
@@ -1785,6 +1876,21 @@ Deno.serve(async (req)=>{
       if ((!out || !out.length) && MAPBOX) out = await mbGeocode(q.trim(), laN, lnN, 6).catch(()=>null);
       if (!out) return err("UPSTREAM", "El servicio de búsqueda no respondió", 502);
       return json(out);
+    }
+    if (p === "/api/mobility/nearby" && req.method === "GET") {
+      const na = needAuth();
+      if (na) return na;
+      const la = Number(url.searchParams.get("lat")), ln = Number(url.searchParams.get("lng"));
+      const radius = Math.min(Number(url.searchParams.get("radius")) || 150, 500);
+      if (!Number.isFinite(la) || !Number.isFinite(ln)) return err("BAD_REQUEST", "Faltan lat/lng", 400);
+      const places = GMAPS ? await gNearby(la, ln, radius).catch(() => null) : null;
+      if (places && places.length) return json({ provider: "google", places });
+      // Respaldo: dirección más cercana (calle y número) por geocodificación inversa
+      const rev = GMAPS ? await gReverse(la, ln).catch(() => null) : null;
+      if (rev) return json({ provider: "google-reverse", places: [{ name: rev.short ?? rev.full, address: rev.full, lat: la, lng: ln, kind: "address", distance_m: 0 }] });
+      const mb = MAPBOX ? await mbReverse(la, ln).catch(() => null) : null;
+      if (mb) return json({ provider: "mapbox", places: [{ name: mb.name ?? `${la.toFixed(5)}, ${ln.toFixed(5)}`, lat: mb.lat ?? la, lng: mb.lng ?? ln, kind: "address", distance_m: 0 }] });
+      return json({ provider: null, places: [] });
     }
     if (p === "/api/mobility/reverse" && req.method === "GET") {
       const na = needAuth();

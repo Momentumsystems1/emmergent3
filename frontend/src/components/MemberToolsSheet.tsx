@@ -17,8 +17,31 @@ import { radius, spacing } from "@/src/theme";
 const fmtEta = (s: number) => (s < 3600 ? `${Math.round(s / 60)} min` : `${Math.floor(s / 3600)} h ${Math.round((s % 3600) / 60)} min`);
 const fmtDist = (m: number) => (m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`);
 
-export function MemberToolsSheet({ member, mePos, groupId, onClose, onFocus }: {
-  member: MapPerson | null; mePos: LatLng | null; groupId?: string; onClose: () => void; onFocus: (m: MapPerson) => void;
+// --- Agenda compartida (privacidad: el servidor decide qué detalle ve cada uno) ---
+export type AgendaSlot = {
+  start: string; end: string;
+  detail: { meeting_id: string; name: string; place: string | null; state: string; sent_by_me: boolean } | null;
+};
+export type AgendaEntry = { user_id: string; name: string; count: number; slots: AgendaSlot[] };
+
+const DAYS = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"];
+const MONTHS = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+const hm = (d: Date) => `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+const sameDay = (a: Date, b: Date) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+function fmtSlot(startIso: string, endIso: string) {
+  const s = new Date(startIso); const e = new Date(endIso);
+  if (isNaN(s.getTime()) || isNaN(e.getTime())) return "";
+  const day = sameDay(s, new Date()) ? "Hoy" : `${DAYS[s.getDay()]} ${s.getDate()} ${MONTHS[s.getMonth()]}`;
+  return `${day} · ${hm(s)} – ${hm(e)}`;
+}
+const STATE_LABEL: Record<string, string> = {
+  invitado: "Pendiente", pendiente: "Pendiente", aceptado: "Aceptada", propone_otra_hora: "Propone otra hora",
+  propone_otro_lugar: "Propone otro lugar", no_puede_acudir: "No puede acudir", preparando_salida: "Preparando salida",
+  en_camino: "En camino", retrasado: "Retrasado", cerca: "Cerca", llegado: "Llegado",
+};
+
+export function MemberToolsSheet({ member, mePos, groupId, agenda, onClose, onFocus }: {
+  member: MapPerson | null; mePos: LatLng | null; groupId?: string; agenda?: AgendaEntry | null; onClose: () => void; onFocus: (m: MapPerson) => void;
 }) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -60,6 +83,33 @@ export function MemberToolsSheet({ member, mePos, groupId, onClose, onFocus }: {
               <Ionicons name="close" size={16} color={BLUR_TEXT} />
             </Pressable>
           </View>
+          {agenda && agenda.count > 0 && (
+            <View testID="member-agenda" style={{ marginTop: spacing.md, gap: 6 }}>
+              <T weight="semibold" style={{ fontSize: 11, color: BLUR_MUTED, letterSpacing: 1.2 }}>AGENDA</T>
+              {agenda.slots.map((sl, i) => {
+                const d = sl.detail;
+                const row = (
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 7, paddingHorizontal: 10, borderRadius: radius.md, backgroundColor: "rgba(255,255,255,0.07)", borderWidth: 1, borderColor: "rgba(255,255,255,0.1)" }}>
+                    <Ionicons name={d ? "calendar" : "lock-closed"} size={14} color={d ? "#22d3ee" : BLUR_MUTED} />
+                    <View style={{ flex: 1 }}>
+                      <T weight="semibold" style={{ fontSize: 12.5, color: BLUR_TEXT }} numberOfLines={1}>{fmtSlot(sl.start, sl.end)}</T>
+                      {d ? (
+                        <T style={{ fontSize: 11.5, color: BLUR_MUTED }} numberOfLines={1}>
+                          {d.name}{d.place ? ` · ${d.place}` : ""}{d.sent_by_me ? ` · ${STATE_LABEL[d.state] ?? d.state}` : ""}
+                        </T>
+                      ) : (
+                        <T style={{ fontSize: 11.5, color: BLUR_MUTED, fontStyle: "italic" }} numberOfLines={1}>Ocupado · detalle privado</T>
+                      )}
+                    </View>
+                    {d && <Ionicons name="chevron-forward" size={14} color={BLUR_MUTED} />}
+                  </View>
+                );
+                return d
+                  ? <Pressable key={i} testID={`member-agenda-slot-${i}`} onPress={() => { onClose(); router.push(`/meeting/${d.meeting_id}`); }}>{row}</Pressable>
+                  : <View key={i} testID={`member-agenda-slot-${i}`}>{row}</View>;
+              })}
+            </View>
+          )}
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, marginTop: spacing.md }}>
             <Tool testID="member-tool-focus" icon="locate" label="Centrar" disabled={!located} onPress={() => { if (!located) return toast("Sin ubicación"); onFocus(member); onClose(); }} />
             <Tool testID="member-tool-go" icon="navigate" label="Ir hacia" primary disabled={!located} onPress={goDrive} />

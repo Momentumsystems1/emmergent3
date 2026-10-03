@@ -14,6 +14,14 @@ import { makeStyles, radius, spacing, useTheme } from "@/src/theme";
 const STATE_LABEL: Record<string, string> = { invitado: "Invitado", pendiente: "Pendiente", aceptado: "Aceptado", propone_otra_hora: "Propone otra hora", propone_otro_lugar: "Propone otro lugar", no_puede_acudir: "No puede acudir", preparando_salida: "Preparando salida", en_camino: "En camino", retrasado: "Retrasado", cerca: "Cerca", llegado: "Llegado" };
 const MY_STATES = ["aceptado", "propone_otra_hora", "propone_otro_lugar", "no_puede_acudir", "preparando_salida", "en_camino", "retrasado", "cerca", "llegado"];
 const fmt = (s: number) => (s < 60 ? `${Math.round(s)} s` : s < 3600 ? `${Math.round(s / 60)} min` : `${Math.floor(s / 3600)} h ${Math.round((s % 3600) / 60)} min`);
+const DAYS_L = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
+const MONTHS_L = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+function fmtWhen(iso: string) {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  const hm = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  return `${DAYS_L[d.getDay()]} ${d.getDate()} de ${MONTHS_L[d.getMonth()]} · ${hm} h`;
+}
 
 export default function Meeting() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -48,6 +56,13 @@ export default function Meeting() {
               {d.destination?.provider ? <T style={{ fontSize: 11, color: colors.muted }}>Fuente: {d.destination.provider}</T> : null}
               <View style={{ flexDirection: "row", gap: 8, marginTop: 6 }}><Pill label={d.status === "active" ? "Activa" : "Cerrada"} tone={d.status === "active" ? "green" : "muted"} /><Pill label={d.participants.some((p: any) => p.eta?.traffic) ? "Tráfico: con datos (Mapbox)" : "Tráfico: sin datos"} tone={d.participants.some((p: any) => p.eta?.traffic) ? "blue" : "muted"} /></View>
             </View>
+            {d.scheduled_at ? (
+              <View style={s.card} testID="meeting-when">
+                <T style={{ fontSize: 11, color: colors.brandPrimary, letterSpacing: 1 }}>CUÁNDO</T>
+                <T weight="semibold" testID="meeting-when-text">{fmtWhen(d.scheduled_at)}</T>
+                <T style={{ fontSize: 11, color: colors.muted }}>Duración prevista: {d.duration_min ?? 60} min</T>
+              </View>
+            ) : null}
             <T weight="bold" style={{ marginTop: spacing.sm }}>Participantes</T>
             {d.participants.map((p: any) => (
               <View key={p.user_id} style={s.card} testID={`participant-${p.user_id}`}>

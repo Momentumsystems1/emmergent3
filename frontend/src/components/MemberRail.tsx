@@ -21,7 +21,7 @@ function addressOf(street?: string | null, number?: string | null, municipality?
   return municipality || name || "Ubicación obtenida";
 }
 
-function MemberRow({ m, onPress }: { m: MapPerson; onPress: () => void }) {
+function MemberRow({ m, onPress, badgeCount }: { m: MapPerson; onPress: () => void; badgeCount?: number }) {
   const located = m.state === "shared" && m.lat != null && m.lng != null;
   const rev = useQuery({
     queryKey: ["reverse", m.lat?.toFixed(4), m.lng?.toFixed(4)],
@@ -46,16 +46,21 @@ function MemberRow({ m, onPress }: { m: MapPerson; onPress: () => void }) {
       <View style={{ position: "absolute", left: 0, top: (BAR - AVATAR) / 2, width: AVATAR, height: AVATAR, borderRadius: AVATAR / 2, borderWidth: 2.5, borderColor: m.color, alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
         <UserPhoto userId={m.user_id} name={m.name} color={m.color} size={AVATAR - 5} hasPhoto={!!m.photo_url} />
       </View>
+      {badgeCount != null && badgeCount > 0 && (
+        <View testID={`member-badge-${m.member_id}`} style={{ position: "absolute", left: AVATAR - 15, top: (BAR - AVATAR) / 2 - 4, minWidth: 18, height: 18, borderRadius: 9, backgroundColor: "#e23b3b", borderWidth: 1.5, borderColor: "#fff", alignItems: "center", justifyContent: "center", paddingHorizontal: 4 }}>
+          <T weight="bold" style={{ fontSize: 10, color: "#fff", lineHeight: 12 }}>{badgeCount > 9 ? "9+" : badgeCount}</T>
+        </View>
+      )}
     </Pressable>
   );
 }
 
-export function MemberRail({ members, top, bottom, onPress }: { members: MapPerson[]; top: number; bottom: number; onPress: (m: MapPerson) => void }) {
+export function MemberRail({ members, top, bottom, onPress, badges }: { members: MapPerson[]; top: number; bottom: number; onPress: (m: MapPerson) => void; badges?: Record<string, number> }) {
   if (!members.length) return null;
   return (
     <View style={{ position: "absolute", right: spacing.md, top, bottom }} pointerEvents="box-none" testID="member-rail">
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 2 }}>
-        {members.map((m) => <MemberRow key={m.member_id} m={m} onPress={() => onPress(m)} />)}
+        {members.map((m) => <MemberRow key={m.member_id} m={m} onPress={() => onPress(m)} badgeCount={badges?.[m.user_id]} />)}
       </ScrollView>
     </View>
   );

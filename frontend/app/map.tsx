@@ -23,7 +23,7 @@ import { BottomNav } from "@/src/components/BottomNav";
 import { GroupsRail } from "@/src/components/GroupsRail";
 import { MainMenu } from "@/src/components/MainMenu";
 import { MemberRail } from "@/src/components/MemberRail";
-import { MemberToolsSheet } from "@/src/components/MemberToolsSheet";
+import { MemberToolsSheet, type AgendaEntry } from "@/src/components/MemberToolsSheet";
 import { Sheet } from "@/src/components/sheets";
 import { SharingPanel } from "@/src/components/SharingFab";
 import { SensorHUD } from "@/src/components/SensorHUD";
@@ -75,6 +75,11 @@ export default function MapHome() {
   const activeConvoy = useQuery({ queryKey: ["convoy-active", group?.id], enabled: !!group, refetchInterval: 20000, queryFn: () => fetchActiveConvoy(group.id) });
   const perms = useQuery({ queryKey: ["permissions"], queryFn: fetchPermissionsRecord });
   const positions = useQuery({ queryKey: ["positions", group?.id], enabled: !!group, refetchInterval: 10000, queryFn: () => api<MapPerson[]>(`/groups/${group.id}/positions`) });
+  // Agenda del grupo (quedadas activas): alimenta el circulito rojo de cada avatar y la ficha del miembro.
+  const agendaQ = useQuery({ queryKey: ["agenda", group?.id], enabled: !!group, refetchInterval: 30000, retry: false, queryFn: () => api<{ agenda: AgendaEntry[] }>(`/groups/${group.id}/agenda`) });
+  const agendaList = agendaQ.data?.agenda ?? [];
+  const agendaBadges: Record<string, number> = {};
+  for (const a of agendaList) if (a.count > 0) agendaBadges[a.user_id] = a.count;
   const sharesLocation = !!perms.data && Object.values(perms.data).some((v: any) => v.effective && (v.key === "exact_location" || v.key === "approx_location"));
   const loc = useLocationSharing(sharesLocation);
   const telemetry = useTelemetry(true);
@@ -346,7 +351,7 @@ export default function MapHome() {
       <UserCard pos={mePos} tasks={tasks} top={insets.top + 76} sharing={sharesLocation && loc.perm === "granted"} open={userOpen} onOpen={() => { closeAll(); setUserOpen(true); }} onClose={() => setUserOpen(false)} />
 
       {/* Right-side member rectangles (tap → member mobility tools) */}
-      <MemberRail members={otherMembers} top={insets.top + 140} bottom={insets.bottom + 92} onPress={(m) => { closeAll(); setMemberSel(m); }} />
+      <MemberRail members={otherMembers} top={insets.top + 140} bottom={insets.bottom + 92} badges={agendaBadges} onPress={(m) => { closeAll(); setMemberSel(m); }} />
 
       {/* Bottom-left map controls: privacy, traffic, recenter (small, out of the way) */}
       <View style={[s.leftFabs, { bottom: insets.bottom + 108 }]} pointerEvents="box-none">
@@ -478,7 +483,7 @@ export default function MapHome() {
           <Button testID="refresh-close" title="Cerrar" variant="ghost" onPress={() => setRefreshCfg(false)} />
         </View>
       </Sheet>
-      <MemberToolsSheet member={memberSel} mePos={mePos} groupId={group?.id} onClose={() => setMemberSel(null)} onFocus={(m) => setFocus({ lat: m.lat!, lng: m.lng!, key: (focus?.key ?? 0) + 1 })} />
+      <MemberToolsSheet member={memberSel} mePos={mePos} groupId={group?.id} agenda={memberSel ? agendaList.find((a) => a.user_id === memberSel.user_id) ?? null : null} onClose={() => setMemberSel(null)} onFocus={(m) => setFocus({ lat: m.lat!, lng: m.lng!, key: (focus?.key ?? 0) + 1 })} />
 
       {!group && groups.isSuccess && !sel ? (
         <View style={[s.hint, { bottom: insets.bottom + 116 }]} pointerEvents="box-none">

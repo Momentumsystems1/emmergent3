@@ -8,6 +8,7 @@ const SVC = Deno.env.get("SENTINEL_SERVICE_KEY");
 const MAPBOX = Deno.env.get("MAPBOX_TOKEN");
 const AZURE = Deno.env.get("AZURE_MAPS_KEY");
 const TOMTOM = Deno.env.get("TOMTOM_KEY");
+const GMAPS = Deno.env.get("GOOGLE_MAPS_KEY");
 
 // ---- Documentos legales servidos por la API (versionados aqui; sin tabla dedicada) ----
 const LEGAL_DOCS: Record<string, { title: string; version: string; status: string; body: string[] }> = {
@@ -606,6 +607,121 @@ async function mbRoute(points, mode) {
     profile_used: used
   };
 }
+// ---- Google Maps Platform (lado servidor): rutas con trafico, geocodificacion inversa y autocompletado ----
+// La clave vive solo aqui; el frontend nunca la ve. Google es proveedor primario y Mapbox queda de respaldo.
+function polyDecode(str) {
+  const out = [];
+  let i = 0, lat = 0, lng = 0;
+  while (i < str.length) {
+    for (let w = 0; w < 2; w++) {
+      let shift = 0, result = 0, b = 0;
+      do { b = str.charCodeAt(i++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20 && i <= str.length);
+      const d = result & 1 ? ~(result >> 1) : result >> 1;
+      if (w === 0) lat += d; else lng += d;
+    }
+    out.push([lat / 1e5, lng / 1e5]);
+  }
+  return out;
+}
+async function gRoute(points, mode) {
+  if (!GMAPS) return null;
+  const ll = (p) => ({ latitude: p[0], longitude: p[1] });
+  const travelMode = ({ car: "DRIVE", motorcycle: "TWO_WHEELER", bicycle: "BICYCLE", pedestrian: "WALK" })[mode] ?? "DRIVE";
+  const body = {
+    origin: { location: { latLng: ll(points[0]) } },
+    destination: { location: { latLng: ll(points[points.length - 1]) } },
+    travelMode,
+    languageCode: "es-ES",
+    units: "METRIC",
+    computeAlternativeRoutes: false
+  };
+  if (points.length > 2) body.intermediates = points.slice(1, -1).map((p) => ({ location: { latLng: ll(p) } }));
+  if (travelMode === "DRIVE" || travelMode === "TWO_WHEELER") body.routingPreference = "TRAFFIC_AWARE";
+  const r = await fetch("https://routes.googleapis.com/directions/v2:computeRoutes", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Goog-Api-Key": GMAPS,
+      "X-Goog-FieldMask": "routes.duration,routes.staticDuration,routes.distanceMeters,routes.polyline.encodedPolyline,routes.legs.steps.distanceMeters,routes.legs.steps.navigationInstruction"
+    },
+    body: JSON.stringify(body)
+  });
+  if (!r.ok) {
+    const t = await r.text().catch(() => "");
+    throw new Error(`Google Routes ${r.status}: ${t.slice(0, 200)}`);
+  }
+  const d = await r.json();
+  const rt = d.routes?.[0];
+  if (!rt?.polyline?.encodedPolyline) return null;
+  const dur = parseInt(rt.duration ?? "0", 10);
+  const stat = parseInt(rt.staticDuration ?? rt.duration ?? "0", 10);
+  return {
+    geometry: polyDecode(rt.polyline.encodedPolyline),
+    distance_m: Math.round(rt.distanceMeters ?? 0),
+    duration_s: dur,
+    duration_traffic_s: dur,
+    delay_s: Math.max(0, dur - stat),
+    arrival: new Date(Date.now() + dur * 1000).toISOString(),
+    steps: (rt.legs ?? []).flatMap((l) => (l.steps ?? []).filter((s) => s.navigationInstruction?.instructions).map((s) => ({ distance_m: Math.round(s.distanceMeters ?? 0), text: s.navigationInstruction.instructions }))),
+    provider: "google",
+    profile_used: travelMode.toLowerCase()
+  };
+}
+async function gReverse(lat, lng) {
+  if (!GMAPS) return null;
+  const u = new URL("https://maps.googleapis.com/maps/api/geocode/json");
+  u.searchParams.set("latlng", `${lat},${lng}`);
+  u.searchParams.set("language", "es");
+  u.searchParams.set("region", "es");
+  u.searchParams.set("key", GMAPS);
+  const r = await fetch(u);
+  if (!r.ok) return null;
+  const d = await r.json();
+  const f = d.results?.[0];
+  if (!f) return null;
+  const comp = Object.fromEntries((f.address_components ?? []).flatMap((c) => (c.types ?? []).map((t) => [t, c.long_name])));
+  const short = [comp.route, comp.street_number].filter(Boolean).join(" ");
+  return {
+    short: short || f.formatted_address,
+    full: f.formatted_address,
+    neighborhood: comp.neighborhood ?? comp.sublocality ?? comp.sublocality_level_1 ?? undefined,
+    municipality: comp.locality ?? comp.administrative_area_level_3 ?? undefined
+  };
+}
+async function gAutocomplete(q, lat, lng, limit = 6) {
+  if (!GMAPS) return null;
+  const body = { input: q, languageCode: "es", regionCode: "ES", includedRegionCodes: ["es"] };
+  if (lat != null && lng != null) body.locationBias = { circle: { center: { latitude: lat, longitude: lng }, radius: 50000 } };
+  const r = await fetch("https://places.googleapis.com/v1/places:autocomplete", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Goog-Api-Key": GMAPS },
+    body: JSON.stringify(body)
+  });
+  if (!r.ok) return null;
+  const d = await r.json();
+  const preds = (d.suggestions ?? []).map((s) => s.placePrediction).filter(Boolean).slice(0, Math.min(limit, 4));
+  const out = [];
+  for (const p of preds) {
+    const dr = await fetch(`https://places.googleapis.com/v1/places/${encodeURIComponent(p.placeId)}`, {
+      headers: { "X-Goog-Api-Key": GMAPS, "X-Goog-FieldMask": "location,formattedAddress,addressComponents" }
+    }).catch(() => null);
+    const det = dr && dr.ok ? await dr.json().catch(() => null) : null;
+    const comp = Object.fromEntries((det?.addressComponents ?? []).flatMap((c) => (c.types ?? []).map((t) => [t, c.longText])));
+    const la = det?.location?.latitude, ln = det?.location?.longitude;
+    if (typeof la !== "number" || typeof ln !== "number") continue;
+    const o = {
+      name: det?.formattedAddress ?? p.text?.text,
+      lat: la,
+      lng: ln,
+      has_number: !!comp.street_number,
+      street: comp.route ?? undefined,
+      municipality: comp.locality ?? undefined
+    };
+    if (lat != null && lng != null) o.distance_m = Math.round(hav(lat, lng, la, ln));
+    out.push(o);
+  }
+  return out;
+}
 async function mbStatic(lat, lng, zoom, w, h, dark, pins, path) {
   // pins: [{lat,lng,hex}], path: [[lat,lng],...]
   const overlays = [];
@@ -771,7 +887,10 @@ Deno.serve(async (req)=>{
       service: "sentinel-api",
       version: "0.8.0",
       providers: {
-        geocoding: MAPBOX ? {
+        geocoding: GMAPS ? {
+          provider: "Google Geocoding/Places",
+          note: null
+        } : MAPBOX ? {
           provider: "Mapbox",
           note: null
         } : {
@@ -785,7 +904,10 @@ Deno.serve(async (req)=>{
           provider: null,
           note: "SERVICIO NO CONFIGURADO"
         },
-        routing: MAPBOX ? {
+        routing: GMAPS ? {
+          provider: "Google Routes",
+          note: null
+        } : MAPBOX ? {
           provider: "Mapbox Directions",
           note: null
         } : {
@@ -1654,21 +1776,24 @@ Deno.serve(async (req)=>{
     if (p === "/api/mobility/autocomplete" && req.method === "GET") {
       const na = needAuth();
       if (na) return na;
-      if (!MAPBOX) return err("SERVICE_NOT_CONFIGURED", "Autocompletado no configurado", 503);
+      if (!MAPBOX && !GMAPS) return err("SERVICE_NOT_CONFIGURED", "Autocompletado no configurado", 503);
       const q = url.searchParams.get("q") ?? "";
       if (q.trim().length < 2) return json([]);
       const la = url.searchParams.get("lat"), ln = url.searchParams.get("lng");
-      const out = await mbGeocode(q.trim(), la ? Number(la) : null, ln ? Number(ln) : null, 6).catch(()=>null);
+      const laN = la ? Number(la) : null, lnN = ln ? Number(ln) : null;
+      let out = GMAPS ? await gAutocomplete(q.trim(), laN, lnN, 6).catch(()=>null) : null;
+      if ((!out || !out.length) && MAPBOX) out = await mbGeocode(q.trim(), laN, lnN, 6).catch(()=>null);
       if (!out) return err("UPSTREAM", "El servicio de búsqueda no respondió", 502);
       return json(out);
     }
     if (p === "/api/mobility/reverse" && req.method === "GET") {
       const na = needAuth();
       if (na) return na;
-      if (!MAPBOX) return err("SERVICE_NOT_CONFIGURED", "Geocodificación inversa no configurada", 503);
+      if (!MAPBOX && !GMAPS) return err("SERVICE_NOT_CONFIGURED", "Geocodificación inversa no configurada", 503);
       const la = Number(url.searchParams.get("lat")), ln = Number(url.searchParams.get("lng"));
       if (!Number.isFinite(la) || !Number.isFinite(ln) || Math.abs(la) > 90 || Math.abs(ln) > 180) return err("BAD_REQUEST", "Coordenadas no válidas", 400);
-      const out = await mbReverse(la, ln).catch(()=>null);
+      let out = GMAPS ? await gReverse(la, ln).catch(()=>null) : null;
+      if (!out && MAPBOX) out = await mbReverse(la, ln).catch(()=>null);
       if (!out) return err("UPSTREAM", "El servicio de geocodificación inversa no respondió", 502);
       return json(out);
     }
@@ -1708,11 +1833,12 @@ Deno.serve(async (req)=>{
     if (p === "/api/mobility/nav-route" && req.method === "POST") {
       const na = needAuth();
       if (na) return na;
-      if (!MAPBOX) return err("SERVICE_NOT_CONFIGURED", "Navegación no configurada", 503);
+      if (!MAPBOX && !GMAPS) return err("SERVICE_NOT_CONFIGURED", "Navegación no configurada", 503);
       const b = await req.json().catch(()=>({}));
       const pts = Array.isArray(b.points) ? b.points.filter((x)=>Array.isArray(x) && x.length >= 2) : [];
       if (pts.length < 2) return err("BAD_REQUEST", "Se necesitan origen y destino", 400);
-      const route = await mbRoute(pts.slice(0, 25), b.mode ?? "car").catch(()=>null);
+      let route = GMAPS ? await gRoute(pts.slice(0, 25), b.mode ?? "car").catch(()=>null) : null;
+      if (!route && MAPBOX) route = await mbRoute(pts.slice(0, 25), b.mode ?? "car").catch(()=>null);
       if (!route) return err("UPSTREAM", "No se pudo calcular la ruta", 502);
       return json(route);
     }
